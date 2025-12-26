@@ -80,8 +80,8 @@ haiku-rag setup used to create this repository.
 
 This site provides machine-readable documentation for AI assistants:
 
-- [llms.txt](/llms.txt) - Concise site index
-- [llms-full.txt](/llms-full.txt) - Full content for RAG ingestion
+- [llms.txt](llms.txt) - Concise site index
+- [llms-full.txt](llms-full.txt) - Full content for RAG ingestion
 
 ## License
 
