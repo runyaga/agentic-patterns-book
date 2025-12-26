@@ -65,7 +65,9 @@ class AgentMessage(BaseModel):
 class DelegatedTask(BaseModel):
     """A task delegated from supervisor to worker."""
 
-    task_id: int = Field(description="Unique task identifier")
+    task_id: int = Field(
+        description="Unique numeric task identifier (must be integer: 1, 2, 3)"
+    )
     assigned_to: AgentRole = Field(description="Agent role to handle this")
     description: str = Field(description="What needs to be done")
     context: str = Field(
@@ -79,7 +81,7 @@ class DelegatedTask(BaseModel):
 class TaskResult(BaseModel):
     """Result from a worker agent completing a task."""
 
-    task_id: int = Field(description="Which task was completed")
+    task_id: int = Field(description="Which task was completed (integer)")
     agent_role: AgentRole = Field(description="Which agent completed it")
     success: bool = Field(description="Whether the task succeeded")
     output: str = Field(description="Task output or error message")
@@ -137,9 +139,16 @@ supervisor_agent = Agent(
         "- analyst: Analyzes data, identifies patterns\n"
         "- writer: Creates content, drafts documents\n"
         "- reviewer: Reviews quality, suggests improvements\n\n"
-        "Create a clear delegation plan with specific tasks."
+        "Create a clear delegation plan with specific tasks. "
+        "Use numeric task IDs (1, 2, 3, etc.), not strings like 'T1'."
     ),
     output_type=SupervisorPlan,
+)
+
+# Common instruction for worker agents
+WORKER_OUTPUT_INSTRUCTION = (
+    "Respond with task_id=0, agent_role='researcher', success=true/false, "
+    "and output containing your findings."
 )
 
 # Researcher agent - gathers information
@@ -149,7 +158,7 @@ researcher_agent = Agent(
         "You are a research specialist. Your job is to gather information, "
         "find relevant sources, and compile research findings. "
         "Be thorough but focused on the specific research request. "
-        "Provide factual, well-organized research output."
+        f"{WORKER_OUTPUT_INSTRUCTION}"
     ),
     output_type=TaskResult,
     deps_type=CollaborationContext,
@@ -162,7 +171,7 @@ analyst_agent = Agent(
         "You are an analysis specialist. Your job is to analyze information, "
         "identify patterns, draw insights, and provide structured analysis. "
         "Be analytical and evidence-based in your conclusions. "
-        "Highlight key findings and their implications."
+        f"{WORKER_OUTPUT_INSTRUCTION}"
     ),
     output_type=TaskResult,
     deps_type=CollaborationContext,
@@ -175,7 +184,7 @@ writer_agent = Agent(
         "You are a writing specialist. Your job is to create clear, "
         "well-structured content based on provided information. "
         "Adapt your writing style to the task requirements. "
-        "Focus on clarity, coherence, and engagement."
+        f"{WORKER_OUTPUT_INSTRUCTION}"
     ),
     output_type=TaskResult,
     deps_type=CollaborationContext,
@@ -188,7 +197,7 @@ reviewer_agent = Agent(
         "You are a review specialist. Your job is to evaluate work quality, "
         "identify issues, and suggest improvements. "
         "Be constructive in your feedback. "
-        "Focus on accuracy, clarity, and completeness."
+        f"{WORKER_OUTPUT_INSTRUCTION}"
     ),
     output_type=TaskResult,
     deps_type=CollaborationContext,
