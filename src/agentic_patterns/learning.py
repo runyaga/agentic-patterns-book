@@ -331,6 +331,8 @@ class FeedbackLoop:
     def get_stats(self) -> LearningStats:
         """Get learning statistics."""
         return self.store.get_stats()
+
+
 # --8<-- [end:models]
 
 
@@ -577,6 +579,8 @@ async def run_adaptive_task(
         print(f"  Outcome recorded: {'success' if success else 'failure'}")
 
     return output
+
+
 # --8<-- [end:learning]
 
 

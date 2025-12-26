@@ -195,6 +195,8 @@ class MemoryDeps:
     """Dependencies for conversational agent."""
 
     memory: BufferMemory | WindowMemory | SummaryMemory
+
+
 # --8<-- [end:models]
 
 
@@ -221,6 +223,8 @@ def add_memory_context(ctx: RunContext[MemoryDeps]) -> str:
         f"Conversation history:\n{context}\n\n"
         "Maintain continuity with this history."
     )
+
+
 # --8<-- [end:agent]
 
 
@@ -275,6 +279,8 @@ async def run_conversation(
     stats = deps.memory.get_stats()
     print("\n" + "=" * 60)
     print(f"{stats.total_messages} msgs, ~{stats.approximate_tokens} tokens")
+
+
 # --8<-- [end:memory]
 
 

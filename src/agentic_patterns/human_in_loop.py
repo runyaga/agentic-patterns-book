@@ -451,6 +451,8 @@ class HumanFeedbackLoop:
                 problem_areas.append(f"{cat}: {rate:.0%} helpful")
 
         return problem_areas
+
+
 # --8<-- [end:models]
 
 
@@ -605,6 +607,8 @@ async def process_with_feedback(
     )
 
     return output, record
+
+
 # --8<-- [end:workflow]
 
 
