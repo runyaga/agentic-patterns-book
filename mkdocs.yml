@@ -1,0 +1,61 @@
+site_name: Agentic Patterns Book (pydantic-ai)
+site_description: Idiomatic pydantic-ai implementations of Agentic Design Patterns by Antonio Gulli
+site_url: https://runyaga.github.io/agentic-patterns-book/
+repo_url: https://github.com/runyaga/agentic-patterns-book
+repo_name: runyaga/agentic-patterns-book
+
+theme:
+  name: cinder
+  highlightjs: true
+  hljs_languages:
+    - python
+    - bash
+
+plugins:
+  - search
+  - llmstxt:
+      full_output: llms-full.txt
+      sections:
+        Getting Started:
+          - index.md: Idiomatic pydantic-ai pattern implementations
+          - getting-started.md: Installation and setup
+        Patterns:
+          - patterns/*.md
+        Reference:
+          - reproduce.md: How to reproduce this repository
+          - attribution.md: Book credits and attribution
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+  - pymdownx.superfences
+  - admonition
+  - pymdownx.details
+  - tables
+  - attr_list
+  - md_in_html
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Patterns:
+      - Overview: patterns/index.md
+      - Prompt Chaining: patterns/01-prompt-chaining.md
+      - Routing: patterns/02-routing.md
+      - Parallelization: patterns/03-parallelization.md
+      - Reflection: patterns/04-reflection.md
+      - Tool Use: patterns/05-tool-use.md
+      - Planning: patterns/06-planning.md
+      - Multi-Agent: patterns/07-multi-agent.md
+      - Memory: patterns/08-memory.md
+      - Learning: patterns/09-learning.md
+      - Human-in-Loop: patterns/13-human-in-loop.md
+      - Knowledge Retrieval: patterns/14-knowledge-retrieval.md
+  - Reproduce This: reproduce.md
+  - Attribution: attribution.md

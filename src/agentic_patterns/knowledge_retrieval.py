@@ -38,6 +38,7 @@ from pydantic_ai import RunContext
 from agentic_patterns._models import get_model
 
 
+# --8<-- [start:models]
 class Document(BaseModel):
     """A source document for the knowledge base."""
 
@@ -113,8 +114,10 @@ class RetrievalStats(BaseModel):
     total_chunks: int = Field(description="Chunks in store")
     avg_chunk_size: float = Field(description="Average chunk length")
     queries_processed: int = Field(description="Queries handled")
+# --8<-- [end:models]
 
 
+# --8<-- [start:utils]
 def simple_embedding(text: str, dim: int = 64) -> list[float]:
     """
     Create a simple text embedding.
@@ -218,8 +221,10 @@ def chunk_text(
             break
 
     return chunks
+# --8<-- [end:utils]
 
 
+# --8<-- [start:store]
 @dataclass
 class VectorStore:
     """
@@ -364,8 +369,10 @@ class VectorStore:
         self.chunks = []
         self.documents = {}
         self.doc_counter = 0
+# --8<-- [end:store]
 
 
+# --8<-- [start:rag]
 # Initialize model
 model = get_model()
 
@@ -540,6 +547,7 @@ def build_knowledge_base(
         )
 
     return store
+# --8<-- [end:rag]
 
 
 if __name__ == "__main__":

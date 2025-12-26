@@ -4,56 +4,24 @@ Execute independent sub-tasks concurrently (`asyncio.gather`) to reduce latency.
 
 ## Implementation
 
-Source: `src/agentic_patterns/parallelization.py`
+Source: [`src/agentic_patterns/parallelization.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/parallelization.py)
 
-### 1. Sectioning (Task Division)
-
-Divide work into independent sections.
+### Data Models
 
 ```python
-async def run_sectioning(topic: str, sections: list[str]) -> SynthesizedResult:
-    async def process_section(section_name: str) -> SectionResult:
-        result = await section_agent.run(
-            f"Topic: {topic}\nSection focus: {section_name}"
-        )
-        return result.output
-
-    # Run in parallel
-    section_results = await asyncio.gather(*[process_section(s) for s in sections])
-
-    # Synthesize
-    return await synthesis_agent.run(format_sections(section_results))
+--8<-- "src/agentic_patterns/parallelization.py:models"
 ```
 
-### 2. Voting (Majority Consensus)
-
-Run same task multiple times for reliability.
+### Agents
 
 ```python
-async def run_voting(question: str, num_voters: int = 3) -> VotingOutcome:
-    async def get_vote(voter_id: int) -> VoteResult:
-        # Each voter is an independent agent call
-        return (await voting_agent.run(f"Voter {voter_id}: {question}")).output
-
-    vote_results = await asyncio.gather(*[get_vote(i) for i in range(num_voters)])
-
-    # Aggregation logic (e.g., Counter(answers).most_common(1))
-    ...
+--8<-- "src/agentic_patterns/parallelization.py:agents"
 ```
 
-### 3. Map-Reduce (Batch Processing)
-
-Process items in parallel (Map), then combine (Reduce).
+### Parallelization Patterns
 
 ```python
-async def run_map_reduce(documents: list[tuple[str, str]]) -> ReducedSummary:
-    # Map: Summarize each doc
-    summaries = await asyncio.gather(
-        *[map_agent.run(f"Doc: {d}\n{c}") for d, c in documents]
-    )
-
-    # Reduce: Combine summaries
-    return await reduce_agent.run(format_summaries(summaries))
+--8<-- "src/agentic_patterns/parallelization.py:patterns"
 ```
 
 ## Use Cases

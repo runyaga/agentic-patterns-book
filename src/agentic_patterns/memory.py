@@ -13,11 +13,13 @@ from enum import Enum
 
 from pydantic import BaseModel
 from pydantic import Field
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent
+from pydantic_ai import RunContext
 
 from agentic_patterns._models import get_model
 
 
+# --8<-- [start:models]
 class MessageRole(str, Enum):
     """Role of a message sender."""
 
@@ -75,23 +77,26 @@ class BufferMemory:
     messages: list[MemoryMessage] = field(default_factory=list)
     max_messages: int | None = None
 
-    def add_message(self, role: MessageRole, content: str):
+    def add_message(self, role: MessageRole, content: str) -> None:
         msg = MemoryMessage(role=role, content=content)
         self.messages.append(msg)
         if self.max_messages and len(self.messages) > self.max_messages:
             self.messages = self.messages[-self.max_messages :]
 
-    def add_user_message(self, content: str):
+    def add_user_message(self, content: str) -> None:
         self.add_message(MessageRole.USER, content)
 
-    def add_ai_message(self, content: str):
+    def add_ai_message(self, content: str) -> None:
         self.add_message(MessageRole.AI, content)
 
     def get_context(self) -> str:
-        return "\n".join(f"{m.role.value.upper()}: {m.content}" for m in self.messages)
+        lines = [f"{m.role.value.upper()}: {m.content}" for m in self.messages]
+        return "\n".join(lines)
 
     def get_stats(self) -> MemoryStats:
-        user_count = sum(1 for m in self.messages if m.role == MessageRole.USER)
+        user_count = sum(
+            1 for m in self.messages if m.role == MessageRole.USER
+        )
         ai_count = sum(1 for m in self.messages if m.role == MessageRole.AI)
         total_chars = sum(len(m.content) for m in self.messages)
         return MemoryStats(
@@ -110,22 +115,25 @@ class WindowMemory:
     messages: list[MemoryMessage] = field(default_factory=list)
     window_size: int = 10
 
-    def add_message(self, role: MessageRole, content: str):
+    def add_message(self, role: MessageRole, content: str) -> None:
         self.messages.append(MemoryMessage(role=role, content=content))
         if len(self.messages) > self.window_size:
             self.messages = self.messages[-self.window_size :]
 
-    def add_user_message(self, content: str):
+    def add_user_message(self, content: str) -> None:
         self.add_message(MessageRole.USER, content)
 
-    def add_ai_message(self, content: str):
+    def add_ai_message(self, content: str) -> None:
         self.add_message(MessageRole.AI, content)
 
     def get_context(self) -> str:
-        return "\n".join(f"{m.role.value.upper()}: {m.content}" for m in self.messages)
+        lines = [f"{m.role.value.upper()}: {m.content}" for m in self.messages]
+        return "\n".join(lines)
 
     def get_stats(self) -> MemoryStats:
-        user_count = sum(1 for m in self.messages if m.role == MessageRole.USER)
+        user_count = sum(
+            1 for m in self.messages if m.role == MessageRole.USER
+        )
         ai_count = sum(1 for m in self.messages if m.role == MessageRole.AI)
         total_chars = sum(len(m.content) for m in self.messages)
         return MemoryStats(
@@ -146,25 +154,30 @@ class SummaryMemory:
     recent_window: int = 6
     summarize_threshold: int = 12
 
-    def add_message(self, role: MessageRole, content: str):
+    def add_message(self, role: MessageRole, content: str) -> None:
         self.messages.append(MemoryMessage(role=role, content=content))
 
-    def add_user_message(self, content: str):
+    def add_user_message(self, content: str) -> None:
         self.add_message(MessageRole.USER, content)
 
-    def add_ai_message(self, content: str):
+    def add_ai_message(self, content: str) -> None:
         self.add_message(MessageRole.AI, content)
 
     def get_context(self) -> str:
         parts = []
         if self.summaries:
             parts.append(f"Previous summary: {self.summaries[-1].summary}")
-        recent = "\n".join(f"{m.role.value.upper()}: {m.content}" for m in self.messages)
+        recent_lines = [
+            f"{m.role.value.upper()}: {m.content}" for m in self.messages
+        ]
+        recent = "\n".join(recent_lines)
         parts.append(f"Recent messages:\n{recent}")
         return "\n".join(parts)
 
     def get_stats(self) -> MemoryStats:
-        user_count = sum(1 for m in self.messages if m.role == MessageRole.USER)
+        user_count = sum(
+            1 for m in self.messages if m.role == MessageRole.USER
+        )
         ai_count = sum(1 for m in self.messages if m.role == MessageRole.AI)
         msg_chars = sum(len(m.content) for m in self.messages)
         sum_chars = sum(len(s.summary) for s in self.summaries)
@@ -182,8 +195,10 @@ class MemoryDeps:
     """Dependencies for conversational agent."""
 
     memory: BufferMemory | WindowMemory | SummaryMemory
+# --8<-- [end:models]
 
 
+# --8<-- [start:agent]
 # Initialize model
 model = get_model()
 
@@ -202,9 +217,14 @@ def add_memory_context(ctx: RunContext[MemoryDeps]) -> str:
     context = ctx.deps.memory.get_context()
     if not context:
         return "No previous conversation history."
-    return f"Conversation history:\n{context}\n\nMaintain continuity with this history."
+    return (
+        f"Conversation history:\n{context}\n\n"
+        "Maintain continuity with this history."
+    )
+# --8<-- [end:agent]
 
 
+# --8<-- [start:memory]
 async def chat_with_memory(
     deps: MemoryDeps,
     user_input: str,
@@ -230,7 +250,9 @@ async def run_conversation(
     if memory_type == "window":
         memory = WindowMemory(window_size=window_size)
     elif memory_type == "summary":
-        memory = SummaryMemory(recent_window=window_size // 2, summarize_threshold=window_size)
+        memory = SummaryMemory(
+            recent_window=window_size // 2, summarize_threshold=window_size
+        )
     else:
         memory = BufferMemory()
 
@@ -252,7 +274,8 @@ async def run_conversation(
 
     stats = deps.memory.get_stats()
     print("\n" + "=" * 60)
-    print(f"Stats: {stats.total_messages} messages, ~{stats.approximate_tokens} tokens")
+    print(f"{stats.total_messages} msgs, ~{stats.approximate_tokens} tokens")
+# --8<-- [end:memory]
 
 
 if __name__ == "__main__":

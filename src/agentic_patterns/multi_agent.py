@@ -31,6 +31,7 @@ from pydantic_ai import RunContext
 from agentic_patterns._models import get_model
 
 
+# --8<-- [start:models]
 class AgentRole(str, Enum):
     """Roles that agents can have in collaboration."""
 
@@ -116,8 +117,10 @@ class CollaborationContext:
 
     messages: list[AgentMessage]
     task_results: list[TaskResult]
+# --8<-- [end:models]
 
 
+# --8<-- [start:agents]
 # Initialize the model
 model = get_model()
 
@@ -208,8 +211,10 @@ ROLE_AGENTS = {
     AgentRole.WRITER: writer_agent,
     AgentRole.REVIEWER: reviewer_agent,
 }
+# --8<-- [end:agents]
 
 
+# --8<-- [start:collaboration]
 def _find_result_by_role(
     task_results: list[TaskResult],
     role: str,
@@ -509,6 +514,7 @@ async def run_network_collaboration(
         final_output=final_output,
         messages_exchanged=0,
     )
+# --8<-- [end:collaboration]
 
 
 if __name__ == "__main__":

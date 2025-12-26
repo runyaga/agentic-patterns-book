@@ -1,0 +1,46 @@
+version: 2
+updates:
+  # Python dependencies (pip)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "python"
+    groups:
+      # Group pydantic-ai updates separately since they may have breaking changes
+      pydantic-ai:
+        patterns:
+          - "pydantic-ai*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Group dev dependencies together
+      dev-dependencies:
+        patterns:
+          - "ruff*"
+          - "pytest*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Group docs dependencies together
+      docs-dependencies:
+        patterns:
+          - "mkdocs*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "github-actions"

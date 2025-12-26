@@ -1,0 +1,251 @@
+# Lessons Learned
+
+Notes from implementing agentic design patterns with pydantic-ai.
+
+## Testing pydantic-ai Agents
+
+### Mock the dict, not just the agent
+
+When agents are stored in a lookup dict (like `INTENT_HANDLERS`), patching the
+module-level agent variable doesn't work because the dict already holds
+references to the original agents.
+
+```python
+# WRONG - handler lookup still gets original agent
+with patch("module.order_status_agent") as mock:
+    ...
+
+# RIGHT - patch the dict entry directly
+with patch.dict("module.INTENT_HANDLERS", {Intent.ORDER_STATUS: mock_handler}):
+    ...
+```
+
+### Mock result structure
+
+pydantic-ai agent.run() returns a result object with `.output` attribute:
+
+```python
+mock_result = MagicMock()
+mock_result.output = YourPydanticModel(...)
+mock_agent.run = AsyncMock(return_value=mock_result)
+```
+
+## Code Style
+
+### Union types
+
+Use `X | Y` syntax instead of `Union[X, Y]`:
+
+```python
+# Preferred
+RouteResponse = OrderResponse | ProductResponse | SupportResponse
+
+# Avoid
+RouteResponse = Union[OrderResponse, ProductResponse, SupportResponse]
+```
+
+### String concatenation for long prompts
+
+System prompts exceeding 79 chars should use string concatenation:
+
+```python
+system_prompt=(
+    "You are an intent classifier for a customer service system. "
+    "Analyze the user's query and determine their intent.\n\n"
+    "Classify into one of these categories:\n"
+    "- order_status: Questions about order tracking\n"
+)
+```
+
+## Project Structure
+
+### Avoid deep nesting
+
+Instead of `chapters/chapter1/prompt_chaining/prompt_chaining.py`, use a
+flatter structure:
+
+```
+src/agentic_patterns/
+├── prompt_chaining.py
+├── routing.py
+└── parallelization.py
+```
+
+### Keep tests separate
+
+Standard Python layout with tests outside src:
+
+```
+src/agentic_patterns/...
+tests/
+├── conftest.py
+├── test_prompt_chaining.py
+└── test_routing.py
+```
+
+## pydantic-ai Specifics
+
+### Model configuration
+
+Use OpenAIChatModel with OpenAIProvider for Ollama compatibility:
+
+```python
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
+
+model = OpenAIChatModel(
+    model_name="gpt-oss:20b",
+    provider=OpenAIProvider(
+        base_url="http://localhost:11434/v1",
+        api_key="ollama",
+    ),
+)
+```
+
+### Structured outputs
+
+Use Pydantic models for type-safe agent outputs:
+
+```python
+class RouteDecision(BaseModel):
+    intent: Intent
+    confidence: float = Field(ge=0.0, le=1.0)
+
+agent = Agent(model, output_type=RouteDecision)
+```
+
+### Tool decorators
+
+Use `@agent.tool` for async tools needing context, `@agent.tool_plain` for sync:
+
+```python
+@tool_agent.tool
+async def get_weather(
+    ctx: RunContext[ToolDependencies],
+    location: str,
+) -> WeatherResult:
+    weather_data = ctx.deps.weather_data or DEFAULT_DATA
+    ...
+
+@tool_agent.tool_plain
+def calculate(expression: str) -> CalculationResult:
+    # No context needed, synchronous
+    ...
+```
+
+### Testing decorated tool functions
+
+Decorated `@tool` functions need direct testing with mock RunContext for full
+coverage. Mocking only the agent doesn't cover the tool function bodies:
+
+```python
+@pytest.fixture
+def mock_context():
+    ctx = MagicMock()
+    ctx.deps = ToolDependencies(weather_data={"berlin": {...}})
+    return ctx
+
+@pytest.mark.asyncio
+async def test_get_weather_direct(mock_context):
+    from module import get_weather
+    result = await get_weather(mock_context, "Berlin")
+    assert result.temperature == 5.0
+```
+
+### Dependency injection with dataclasses
+
+Use `@dataclass` for agent dependencies, not Pydantic models:
+
+```python
+@dataclass
+class ToolDependencies:
+    weather_data: dict[str, dict] | None = None
+    search_data: dict[str, list[str]] | None = None
+
+agent = Agent(model, deps_type=ToolDependencies)
+```
+
+## Pattern-Specific Lessons
+
+### Reflection Pattern (Producer-Critic)
+
+Iterative refinement needs clear stopping criteria:
+
+```python
+class Critique(BaseModel):
+    is_satisfactory: bool  # Clear boolean for loop control
+    issues: list[str]
+    suggestions: list[str]
+
+async def run_reflection(prompt: str, max_iterations: int = 3):
+    for i in range(max_iterations):
+        critique = await critic_agent.run(...)
+        if critique.output.is_satisfactory:
+            break
+        draft = await refiner_agent.run(...)
+```
+
+### Tool Use Pattern (Safe Eval)
+
+For calculator tools, restrict eval to safe operations:
+
+```python
+allowed_names = {
+    "abs": abs, "round": round, "min": min,
+    "max": max, "pow": pow, "sum": sum,
+}
+result = eval(expression, {"__builtins__": {}}, allowed_names)
+```
+
+### Planning Pattern (Dependencies)
+
+Track step dependencies and skip steps with unmet dependencies:
+
+```python
+class PlanStep(BaseModel):
+    step_number: int
+    dependencies: list[int] = Field(default_factory=list)
+    status: StepStatus = Field(default=StepStatus.PENDING)
+
+# During execution
+deps_met = all(
+    any(r.step_number == d and r.success for r in step_results)
+    for d in step.dependencies
+)
+if not deps_met:
+    step_results.append(StepResult(
+        step_number=step.step_number,
+        success=False,
+        output="Skipped: dependencies not met",
+    ))
+```
+
+### Multi-Agent Coordination
+
+Use separate specialized agents rather than one complex agent:
+
+```python
+planner_agent = Agent(model, output_type=Plan, system_prompt="...")
+executor_agent = Agent(model, output_type=StepResult, system_prompt="...")
+replanner_agent = Agent(model, output_type=Plan, system_prompt="...")
+synthesizer_agent = Agent(model, output_type=str, system_prompt="...")
+```
+
+## Coverage Strategies
+
+### Test both integration and unit levels
+
+- Integration: Mock agents, test orchestration logic
+- Unit: Test Pydantic models directly, test tool functions with mock context
+
+```python
+# Integration - mock agent
+with patch("module.executor_agent") as mock:
+    mock.run = AsyncMock(return_value=mock_result)
+    result = await execute_plan(plan)
+
+# Unit - direct model test
+def test_plan_step_valid():
+    step = PlanStep(step_number=1, description="Test", expected_output="Out")
+    assert step.status == StepStatus.PENDING
+```

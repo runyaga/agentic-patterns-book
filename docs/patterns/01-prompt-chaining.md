@@ -4,57 +4,24 @@ Chain multiple LLM calls where each step's output becomes the next input.
 
 ## Implementation
 
-Source: `src/agentic_patterns/prompt_chaining.py`
+Source: [`src/agentic_patterns/prompt_chaining.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/prompt_chaining.py)
 
-### Data Models & Agents
+### Data Models
 
 ```python
-@dataclass
-class ChainDeps:
-    """Dependencies for passing context between chain steps."""
-    raw_text: str | None = None
-    summary: ResearchSummary | None = None
-    trends: TrendAnalysis | None = None
+--8<-- "src/agentic_patterns/prompt_chaining.py:models"
+```
 
-class ResearchSummary(BaseModel):
-    key_findings: list[str] = Field(description="List of key findings")
-    main_themes: list[str] = Field(description="Main themes identified")
-    market_size: str | None = Field(description="Market size if mentioned")
+### Agents with System Prompts
 
-# specialized agents with deps_type=ChainDeps
-summarizer_agent = Agent(
-    model, 
-    deps_type=ChainDeps,
-    output_type=ResearchSummary, 
-    system_prompt="..."
-)
-# ... trend_analyzer_agent, email_drafter_agent follow same pattern
+```python
+--8<-- "src/agentic_patterns/prompt_chaining.py:agents"
 ```
 
 ### Chain Execution
 
 ```python
-async def run_prompt_chain(market_research_text: str) -> MarketingEmail:
-    # Step 1: Summarize
-    deps = ChainDeps(raw_text=market_research_text)
-    summary_result = await summarizer_agent.run(
-        "Summarize this report.", deps=deps
-    )
-    summary = summary_result.output
-
-    # Step 2: Identify trends (pass state via deps)
-    deps.summary = summary
-    trend_result = await trend_analyzer_agent.run(
-        "Identify top 3 trends based on the summary.", deps=deps
-    )
-    trends = trend_result.output
-
-    # Step 3: Draft email
-    deps.trends = trends
-    email_result = await email_drafter_agent.run(
-        "Draft an email regarding these trends.", deps=deps
-    )
-    return email_result.output
+--8<-- "src/agentic_patterns/prompt_chaining.py:chain"
 ```
 
 ## Use Cases

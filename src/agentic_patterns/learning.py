@@ -36,6 +36,7 @@ from pydantic_ai import RunContext
 from agentic_patterns._models import get_model
 
 
+# --8<-- [start:models]
 class ExperienceType(str, Enum):
     """Type of experience recorded."""
 
@@ -330,8 +331,10 @@ class FeedbackLoop:
     def get_stats(self) -> LearningStats:
         """Get learning statistics."""
         return self.store.get_stats()
+# --8<-- [end:models]
 
 
+# --8<-- [start:agents]
 # Initialize model
 model = get_model()
 
@@ -404,8 +407,10 @@ feedback_evaluator = Agent(
     ),
     output_type=FeedbackResult,
 )
+# --8<-- [end:agents]
 
 
+# --8<-- [start:learning]
 def format_examples_as_context(examples: list[Experience]) -> str:
     """
     Format examples as few-shot context.
@@ -572,6 +577,7 @@ async def run_adaptive_task(
         print(f"  Outcome recorded: {'success' if success else 'failure'}")
 
     return output
+# --8<-- [end:learning]
 
 
 if __name__ == "__main__":

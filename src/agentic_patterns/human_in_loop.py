@@ -34,6 +34,7 @@ from pydantic_ai import Agent
 from agentic_patterns._models import get_model
 
 
+# --8<-- [start:models]
 class EscalationReason(str, Enum):
     """Reason for escalating to human review."""
 
@@ -450,8 +451,10 @@ class HumanFeedbackLoop:
                 problem_areas.append(f"{cat}: {rate:.0%} helpful")
 
         return problem_areas
+# --8<-- [end:models]
 
 
+# --8<-- [start:agents]
 # Initialize model
 model = get_model()
 
@@ -494,8 +497,10 @@ task_agent = Agent(
     ),
     output_type=AgentOutput,
 )
+# --8<-- [end:agents]
 
 
+# --8<-- [start:workflow]
 async def execute_with_oversight(
     task: str,
     policy: EscalationPolicy,
@@ -600,6 +605,7 @@ async def process_with_feedback(
     )
 
     return output, record
+# --8<-- [end:workflow]
 
 
 if __name__ == "__main__":

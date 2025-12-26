@@ -4,73 +4,24 @@ Coordinate specialized agents (Supervisor, Researcher, Writer) to achieve comple
 
 ## Implementation
 
-Source: `src/agentic_patterns/multi_agent.py`
+Source: [`src/agentic_patterns/multi_agent.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/multi_agent.py)
 
-### Roles & Plans
+### Data Models
 
 ```python
-class AgentRole(str, Enum):
-    SUPERVISOR = "supervisor"
-    RESEARCHER = "researcher"
-    # ...
-
-class DelegatedTask(BaseModel):
-    task_id: int
-    assigned_to: AgentRole
-    description: str
-    status: TaskStatus = Field(default=TaskStatus.PENDING)
-
-class SupervisorPlan(BaseModel):
-    objective: str
-    tasks: list[DelegatedTask] = Field(description="Delegation strategy")
-
-# Supervisor Agent
-supervisor_agent = Agent(
-    model, 
-    output_type=SupervisorPlan,
-    system_prompt="Coordinate team: Researcher, Analyst, Writer..."
-)
+--8<-- "src/agentic_patterns/multi_agent.py:models"
 ```
 
-### Execution Loop (Supervisor Pattern)
+### Agents
 
 ```python
-async def run_collaborative_task(objective: str):
-    context = CollaborationContext(messages=[], task_results=[])
-
-    # 1. Supervisor plans delegation
-    plan = await supervisor_agent.run(f"Plan for: {objective}")
-    
-    # 2. Execute tasks sequentially
-    for task in plan.output.tasks:
-        worker = ROLE_AGENTS[task.assigned_to]
-        
-        # Workers can see previous results via tools/context
-        result = await worker.run(
-            f"Task: {task.description}", 
-            deps=context
-        )
-        context.task_results.append(result.output)
-
-    # 3. Synthesize final output
-    return await synthesizer_agent.run(
-        f"Combine results for: {objective}", deps=context
-    )
+--8<-- "src/agentic_patterns/multi_agent.py:agents"
 ```
 
-### Network Pattern (Parallel)
-
-Alternatively, agents work in parallel without a strict supervisor plan:
+### Collaboration Logic
 
 ```python
-async def run_network(objective: str, roles: list[AgentRole]):
-    # Consult all agents in parallel
-    results = await asyncio.gather(*[
-        ROLE_AGENTS[role].run(f"Perspective on: {objective}") 
-        for role in roles
-    ])
-    # Synthesize their independent perspectives
-    return await synthesizer_agent.run(format_results(results))
+--8<-- "src/agentic_patterns/multi_agent.py:collaboration"
 ```
 
 ## Use Cases

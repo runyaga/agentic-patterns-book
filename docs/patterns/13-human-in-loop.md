@@ -4,64 +4,24 @@ Integrate human oversight for high-stakes decisions or low-confidence outputs.
 
 ## Implementation
 
-Source: `src/agentic_patterns/human_in_loop.py`
+Source: [`src/agentic_patterns/human_in_loop.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/human_in_loop.py)
 
-### Escalation Policy
-
-Rules defining when to stop for human review.
+### Data Models & Policies
 
 ```python
-@dataclass
-class EscalationPolicy:
-    confidence_threshold: float = 0.7
-    sensitive_keywords: list[str] = field(default_factory=list)
-    high_risk_actions: list[str] = field(default_factory=list)
-
-    def should_escalate(self, output: AgentOutput) -> tuple[bool, str]:
-        if output.confidence < self.confidence_threshold:
-            return True, "low_confidence"
-        
-        if any(w in output.content for w in self.sensitive_keywords):
-            return True, "sensitive_content"
-            
-        return False, None
+--8<-- "src/agentic_patterns/human_in_loop.py:models"
 ```
 
-### Idiomatic Pattern (Self-Assessed Confidence)
-
-The agent returns `AgentOutput` directly with self-assessed confidence, rather
-than having the wrapper assign a fake confidence score.
+### Agents
 
 ```python
-# Agent returns structured output with confidence
-task_agent = Agent(
-    model,
-    system_prompt=(
-        "Complete the task. Self-assess your confidence (0.0-1.0) based on: "
-        "- Certainty about accuracy of response "
-        "- Whether you have complete information "
-        "- Complexity and ambiguity of the task"
-    ),
-    output_type=AgentOutput,  # Model returns confidence directly
-)
+--8<-- "src/agentic_patterns/human_in_loop.py:agents"
 ```
 
-### Execution with Oversight
+### Workflow with Oversight
 
 ```python
-async def execute_with_oversight(task: str, policy: EscalationPolicy):
-    # 1. Run Agent - model self-assesses confidence
-    result = await task_agent.run(task)
-    output = result.output  # AgentOutput with confidence
-
-    # 2. Check Policy
-    should_escalate, reason = policy.should_escalate(output)
-
-    # 3. Escalate or Approve
-    if should_escalate:
-        return EscalationRequest(reason=reason, output=output)
-    else:
-        return output.content
+--8<-- "src/agentic_patterns/human_in_loop.py:workflow"
 ```
 
 ## Use Cases

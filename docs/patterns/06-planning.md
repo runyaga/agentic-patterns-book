@@ -4,51 +4,24 @@ Dynamically decompose goals into steps, execute them, and adapt to failures.
 
 ## Implementation
 
-Source: `src/agentic_patterns/planning.py`
+Source: [`src/agentic_patterns/planning.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/planning.py)
 
-### Plan Models
+### Data Models
 
 ```python
-class StepStatus(str, Enum):
-    PENDING = "pending"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-class PlanStep(BaseModel):
-    step_number: int
-    description: str
-    expected_output: str
-    dependencies: list[int] = Field(description="Step IDs this depends on")
-    status: StepStatus = Field(default=StepStatus.PENDING)
-
-class Plan(BaseModel):
-    goal: str
-    steps: list[PlanStep]
-    reasoning: str
+--8<-- "src/agentic_patterns/planning.py:models"
 ```
 
-### Agents & Execution Loop
+### Agents
 
 ```python
-planner_agent = Agent(model, output_type=Plan)    # Create initial plan
-executor_agent = Agent(model, output_type=StepResult) # Execute one step
-replanner_agent = Agent(model, output_type=Plan)  # Fix plan on failure
+--8<-- "src/agentic_patterns/planning.py:agents"
+```
 
-async def execute_plan(plan: Plan):
-    results = []
-    for step in plan.steps:
-        # Check dependencies
-        if not check_deps(step, results): continue
+### Planning & Execution Logic
 
-        # Execute
-        result = await executor_agent.run(f"Execute {step.description}...")
-        results.append(result)
-
-        # Handle Failure (Re-planning)
-        if not result.success:
-            plan = await replanner_agent.run(
-                f"Step failed: {result.error}. Revise plan..."
-            )
+```python
+--8<-- "src/agentic_patterns/planning.py:planning"
 ```
 
 ## Use Cases

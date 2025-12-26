@@ -1,0 +1,73 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+bin/
+share/
+pyvenv.cfg
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# MkDocs
+site/
+
+# Ruff
+.ruff_cache/
+
+# Local databases
+db/
+*.lancedb/
+
+# RAG config (user-specific)
+rag.yaml
+haiku-rag.yaml
+
+# PDFs (obtain book separately)
+*.pdf
+
+# Claude Code internal state
+.claude/
+**/.claude/
+
+# Lock files
+.lock
+CACHEDIR.TAG
+
+# UV lock (regenerated)
+uv.lock

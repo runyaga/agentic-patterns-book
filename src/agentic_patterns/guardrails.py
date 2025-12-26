@@ -93,7 +93,8 @@ class SafetyAssessment(BaseModel):
     decision: SafetyDecision = Field(description="Safety decision")
     reasoning: str = Field(description="Explanation for decision")
     confidence: float = Field(
-        ge=0.0, le=1.0,
+        ge=0.0,
+        le=1.0,
         description="Confidence in assessment",
     )
     violations: list[str] = Field(
@@ -123,14 +124,16 @@ class InputGuardrail:
     Checks user input for safety issues before processing.
     """
 
-    blocked_patterns: list[str] = field(default_factory=lambda: [
-        r"ignore\s+(all\s+)?(previous\s+)?instructions",
-        r"disregard\s+(your|the)\s+rules",
-        r"jailbreak",
-        r"pretend\s+you\s+are",
-        r"act\s+as\s+if\s+you\s+have\s+no\s+restrictions",
-        r"bypass\s+(your|the)\s+guidelines",
-    ])
+    blocked_patterns: list[str] = field(
+        default_factory=lambda: [
+            r"ignore\s+(all\s+)?(previous\s+)?instructions",
+            r"disregard\s+(your|the)\s+rules",
+            r"jailbreak",
+            r"pretend\s+you\s+are",
+            r"act\s+as\s+if\s+you\s+have\s+no\s+restrictions",
+            r"bypass\s+(your|the)\s+guidelines",
+        ]
+    )
     blocked_keywords: list[str] = field(default_factory=list)
     max_input_length: int = 10000
     strip_html: bool = True
@@ -154,7 +157,7 @@ class InputGuardrail:
 
         # Length check
         if len(user_input) > self.max_input_length:
-            sanitized = user_input[:self.max_input_length]
+            sanitized = user_input[: self.max_input_length]
             reasoning_parts.append("Input truncated to max length")
 
         # Strip HTML if enabled
@@ -210,14 +213,22 @@ class OutputGuardrail:
     """
 
     filter_patterns: list[str] = field(default_factory=list)
-    toxic_keywords: list[str] = field(default_factory=lambda: [
-        "hate", "kill", "violence", "threat", "attack",
-    ])
-    pii_patterns: list[str] = field(default_factory=lambda: [
-        r"\b\d{3}[-.]?\d{2}[-.]?\d{4}\b",  # SSN
-        r"\b\d{16}\b",  # Credit card
-        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",  # Email
-    ])
+    toxic_keywords: list[str] = field(
+        default_factory=lambda: [
+            "hate",
+            "kill",
+            "violence",
+            "threat",
+            "attack",
+        ]
+    )
+    pii_patterns: list[str] = field(
+        default_factory=lambda: [
+            r"\b\d{3}[-.]?\d{2}[-.]?\d{4}\b",  # SSN
+            r"\b\d{16}\b",  # Credit card
+            r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",  # Email
+        ]
+    )
     redact_pii: bool = True
     checks_performed: int = 0
     outputs_filtered: int = 0
@@ -432,14 +443,18 @@ class GuardedExecutor:
     ) -> None:
         """Log a violation event."""
         if self.log_violations:
-            self.violation_log.append({
-                "stage": stage,
-                "content": content[:200],
-                "violations": [v.value if hasattr(v, "value") else v
-                               for v in violations],
-                "reasoning": reasoning,
-                "timestamp": datetime.now().isoformat(),
-            })
+            self.violation_log.append(
+                {
+                    "stage": stage,
+                    "content": content[:200],
+                    "violations": [
+                        v.value if hasattr(v, "value") else v
+                        for v in violations
+                    ],
+                    "reasoning": reasoning,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
 
     async def run(
         self,
@@ -487,8 +502,7 @@ class GuardedExecutor:
 
         # Return filtered output if enabled
         final_output = (
-            output_result.filtered_output
-            if self.filter_output else output
+            output_result.filtered_output if self.filter_output else output
         )
 
         return final_output, input_result, output_result

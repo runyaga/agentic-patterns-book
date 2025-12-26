@@ -4,46 +4,30 @@ Enable agents to execute external functions (APIs, DBs, calculations).
 
 ## Implementation
 
-Source: `src/agentic_patterns/tool_use.py`
+Source: [`src/agentic_patterns/tool_use.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/tool_use.py)
+
+### Data Models
+
+```python
+--8<-- "src/agentic_patterns/tool_use.py:models"
+```
+
+### Agent Definition
+
+```python
+--8<-- "src/agentic_patterns/tool_use.py:agent"
+```
 
 ### Tool Definitions
 
-PydanticAI uses decorators to register tools.
-
 ```python
-@dataclass
-class ToolDependencies:
-    weather_data: dict[str, dict] | None = None
-
-# Agent with dependencies
-tool_agent = Agent(
-    model,
-    deps_type=ToolDependencies,
-    system_prompt="Use tools to answer questions...",
-)
-
-# Async Tool (with context)
-@tool_agent.tool
-async def get_weather(ctx: RunContext[ToolDependencies], location: str) -> WeatherResult:
-    """Get weather for a location."""
-    data = ctx.deps.weather_data.get(location)
-    return WeatherResult(temp=data["temp"], ...)
-
-# Sync Tool (plain function)
-@tool_agent.tool_plain
-def calculate(expression: str) -> float:
-    """Safe calculation tool."""
-    return eval(expression, {"__builtins__": {}}, safe_math_funcs)
+--8<-- "src/agentic_patterns/tool_use.py:tools"
 ```
 
 ### Execution
 
 ```python
-async def run_tool_agent(query: str):
-    deps = ToolDependencies(weather_data={...})
-    # Agent decides when to call tools based on query
-    result = await tool_agent.run(query, deps=deps)
-    return result.output
+--8<-- "src/agentic_patterns/tool_use.py:run"
 ```
 
 ## Use Cases
@@ -57,15 +41,6 @@ async def run_tool_agent(query: str):
 - Tasks require capabilities beyond text generation (math, current data).
 - Real-time information is needed (weather, stock prices).
 - Interaction with external systems is required.
-
-## Testing
-
-```python
-async def test_weather_tool():
-    ctx = MagicMock(deps=ToolDependencies(weather_data={"London": ...}))
-    result = await get_weather(ctx, "London")
-    assert result.temp == 15.0
-```
 
 ## Example
 

@@ -4,7 +4,7 @@ Maintain conversation context across interactions using different storage strate
 
 ## Implementation
 
-Source: `src/agentic_patterns/memory.py`
+Source: [`src/agentic_patterns/memory.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/memory.py)
 
 ### Memory Strategies
 
@@ -12,45 +12,22 @@ Source: `src/agentic_patterns/memory.py`
 2.  **WindowMemory**: Keeps last $N$ messages. Efficient, but loses distant context.
 3.  **SummaryMemory**: Summarizes old messages, keeps recent ones. Balanced.
 
-### Idiomatic Pattern (Dependency Injection)
-
-PydanticAI allows decoupling memory management from the run loop using `Deps` and `@system_prompt`.
+### Data Models & Memory Classes
 
 ```python
-@dataclass
-class MemoryDeps:
-    """Dependencies for conversational agent."""
-    memory: BufferMemory | WindowMemory | SummaryMemory
-
-# Agent definition with dependency type
-conversational_agent = Agent(
-    model,
-    deps_type=MemoryDeps,
-    system_prompt="You are a helpful assistant."
-)
-
-@conversational_agent.system_prompt
-def add_memory_context(ctx: RunContext[MemoryDeps]) -> str:
-    """The Agent pulls its own history from deps automatically."""
-    context = ctx.deps.memory.get_context()
-    return f"Conversation history:\n{context}"
+--8<-- "src/agentic_patterns/memory.py:models"
 ```
 
-### Execution
-
-The caller only provides the user input and the dependency object.
+### Agent with Memory Injection
 
 ```python
-async def chat_with_memory(deps: MemoryDeps, user_input: str) -> str:
-    # 1. Update memory state
-    deps.memory.add_user_message(user_input)
-    
-    # 2. Run agent (context is injected via @system_prompt hook)
-    result = await conversational_agent.run(user_input, deps=deps)
-    
-    # 3. Update memory with AI response
-    deps.memory.add_ai_message(result.output)
-    return result.output
+--8<-- "src/agentic_patterns/memory.py:agent"
+```
+
+### Memory-Enabled Chat
+
+```python
+--8<-- "src/agentic_patterns/memory.py:memory"
 ```
 
 ## Use Cases
@@ -71,6 +48,4 @@ async def chat_with_memory(deps: MemoryDeps, user_input: str) -> str:
 
 ```bash
 .venv/bin/python -m agentic_patterns.memory
-```
-
 ```
