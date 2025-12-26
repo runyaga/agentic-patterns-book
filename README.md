@@ -1,5 +1,9 @@
 # Agentic Patterns Book
 
+**[Documentation](https://runyaga.github.io/agentic-patterns-book/)** |
+**[Patterns](https://runyaga.github.io/agentic-patterns-book/patterns/)** |
+**[Getting Started](https://runyaga.github.io/agentic-patterns-book/getting-started/)**
+
 [![CI](https://github.com/runyaga/agentic-patterns-book/actions/workflows/ci.yml/badge.svg)](https://github.com/runyaga/agentic-patterns-book/actions/workflows/ci.yml)
 [![Documentation](https://github.com/runyaga/agentic-patterns-book/actions/workflows/docs.yml/badge.svg)](https://runyaga.github.io/agentic-patterns-book/)
 
