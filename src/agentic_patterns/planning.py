@@ -99,8 +99,9 @@ planner_agent = Agent(
     model,
     system_prompt=(
         "You are a strategic planner. Given a goal, create a detailed plan "
-        "with clear, actionable steps. Each step should be specific and "
-        "measurable. Consider dependencies between steps. "
+        "with clear, actionable steps. Each step needs: step_number (int), "
+        "description (what to do), expected_output (result), and "
+        "dependencies (list of step numbers it depends on, or empty list). "
         "Order steps logically from first to last."
     ),
     output_type=Plan,
@@ -112,7 +113,9 @@ executor_agent = Agent(
     system_prompt=(
         "You are a task executor. Given a step description and context, "
         "execute the step and report the result. Be thorough but concise. "
-        "If the step cannot be completed, explain why clearly."
+        "If the step cannot be completed, explain why clearly. "
+        "Respond with step_number, success (true/false), output, and "
+        "needs_replan (true/false). Do not wrap output in markdown."
     ),
     output_type=StepResult,
 )
