@@ -9,7 +9,7 @@ description = "Agentic Design Patterns implemented with pydantic-ai"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "haiku-rag[slim]>=0.22.0",
+    "haiku-rag-slim>=0.22.0",
     "pydantic-ai>=0.1.0",
 ]
 
