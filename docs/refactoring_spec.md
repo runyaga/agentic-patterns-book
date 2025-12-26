@@ -99,741 +99,415 @@ result = await agent.run("query", deps=MyDeps(threshold=0.9))
 
 ---
 
-## 2. Pattern Specifications
+## 2. When to Use Each Feature
 
-### 2.1 reflection.py
+These are **principles, not mandates**. Apply idiomatic features where they add
+value; don't force them where they don't fit.
 
-**Current state:** Manual `while` loop with separate producer/critic/refiner
-agents.
+### 2.1 `@output_validator` + `ModelRetry`
 
-**Target:** `@output_validator` on producer calls critic internally.
+**Use when:**
+- You have explicit quality criteria (score thresholds, schema validation)
+- Failed outputs should trigger automatic retry with feedback
+- The model can meaningfully improve based on the error message
 
-#### Deps Definition
+**Don't use when:**
+- Output is pass-through with no quality gate
+- Validation is binary pass/fail with no useful feedback
+- Retrying won't help (e.g., missing information the model can't invent)
 
-```python
-from dataclasses import dataclass
+**Example patterns:** reflection (critic score), planning (step validation)
 
-@dataclass
-class ReflectionDeps:
-    """Dependencies for reflection pattern."""
-    acceptable_score: float = 8.0
-```
+### 2.2 `@system_prompt` Decorator
 
-#### Target Architecture
+**Use when:**
+- Injecting **persistent context** into the system prompt (conversation history,
+  user preferences, retrieved knowledge)
+- Context comes from `deps` and should be available for every call
+- You want to separate "what the agent is" from "what context it has"
 
-```python
-from pydantic_ai import Agent, RunContext, ModelRetry
+**Don't use when:**
+- Building the **user message** with task-specific data
+- Data is one-time input, not persistent context
+- The f-string is constructing what the user is asking, not agent context
 
-model = get_model()
+**Example patterns:** memory (conversation history), learning (past experiences)
 
-# Producer agent with deps
-producer_agent = Agent(
-    model,
-    system_prompt=(
-        "You are a skilled content producer. Generate high-quality content "
-        "based on the given task. Be thorough, accurate, and well-structured. "
-        "If you receive feedback from a previous attempt, incorporate it to "
-        "improve your output significantly."
-    ),
-    output_type=ProducerOutput,
-    deps_type=ReflectionDeps,
-)
+**Counter-example:** prompt_chaining - f-strings build user messages with step
+data, not system context. This is correct.
 
-# Critic agent (no deps needed)
-critic_agent = Agent(
-    model,
-    system_prompt=(
-        "You are a critical reviewer. Evaluate the given content objectively. "
-        "Score from 0-10 where 8+ means acceptable quality. "
-        "Identify specific strengths and weaknesses. "
-        "Provide actionable suggestions for improvement."
-    ),
-    output_type=Critique,
-)
+### 2.3 `deps_type` + `RunContext`
 
+**Use when:**
+- Runtime configuration (thresholds, limits, feature flags)
+- Shared services (database connections, API clients, stores)
+- State that multiple decorators/tools need access to
 
-@producer_agent.output_validator
-async def validate_quality(
-    ctx: RunContext[ReflectionDeps],
-    output: ProducerOutput,
-) -> ProducerOutput:
-    """Validate output quality via critic agent."""
-    critique_result = await critic_agent.run(
-        f"Evaluate this content:\n\n{output.content}"
-    )
-    critique = critique_result.output
+**Don't use when:**
+- No shared state between agent components
+- All configuration is static/hardcoded
+- Single-use agents with no tools or validators
 
-    if critique.score < ctx.deps.acceptable_score:
-        suggestions = "\n".join(f"- {s}" for s in critique.suggestions)
-        weaknesses = "\n".join(f"- {w}" for w in critique.weaknesses)
-        raise ModelRetry(
-            f"Score: {critique.score}/10 (need {ctx.deps.acceptable_score}+)\n"
-            f"Weaknesses:\n{weaknesses}\n"
-            f"Suggestions:\n{suggestions}\n"
-            f"Please improve the content addressing these issues."
-        )
-    return output
-```
+**Example patterns:** reflection (acceptable_score), RAG (vector store),
+resource_aware (budget tracker)
 
-#### Simplified Public API
+### 2.4 `@tool` Decorator
 
-```python
-async def run_reflection(
-    task: str,
-    deps: ReflectionDeps | None = None,
-) -> ReflectionResult:
-    """
-    Run reflection with automatic quality validation.
+**Use when:**
+- Agent needs to **dynamically fetch** external data during generation
+- The agent should decide when/whether to call the tool
+- Data isn't known upfront and depends on the conversation
 
-    Args:
-        task: The task/prompt for content generation.
-        deps: Optional ReflectionDeps (defaults to acceptable_score=8.0).
+**Don't use when:**
+- All context is available before the agent runs
+- You're just passing data through the prompt
+- The "tool" would always be called exactly once
 
-    Returns:
-        ReflectionResult with final content and metadata.
-    """
-    deps = deps or ReflectionDeps()
-    result = await producer_agent.run(task, deps=deps)
+**Example patterns:** knowledge_retrieval (search tool), tool_use (calculators,
+APIs)
 
-    return ReflectionResult(
-        final_content=result.output.content,
-        iterations=len(result.all_messages()),  # Approximate
-        final_score=deps.acceptable_score,  # Met threshold
-        improvement_history=[],
-        converged=True,
-    )
-```
+**Counter-example:** RAG with pre-retrieved context - if you always retrieve
+before calling the agent, that's not a tool, that's prompt construction.
 
-#### What to Remove
+### 2.5 Decision Framework
 
-- `reflect_once()` function - logic moves to validator
-- `refiner_agent` - producer handles refinement via retry
-- Manual `while` loop in `run_reflection`
-- `max_iterations` parameter (PydanticAI handles retry limits)
+When evaluating a pattern, ask:
 
-#### What to Keep
+1. **Is there a retry loop?** → Consider `@output_validator` + `ModelRetry`
+2. **Is context injected into system prompt?** → Consider `@system_prompt`
+3. **Is there shared runtime state?** → Consider `deps_type`
+4. **Does the agent need to fetch data dynamically?** → Consider `@tool`
 
-- `self_reflect()` function - different pattern, keep manual loop
-- All Pydantic models: `ProducerOutput`, `Critique`, `RefinedOutput`,
-  `ReflectionResult`
-- `critic_agent` - called from validator
+If the answer is "no" to all, the pattern may already be idiomatic or may not
+need these features.
 
 ---
 
-### 2.2 human_in_loop.py
+## 3. Pattern Assessments
 
-**Current state:** `task_agent` returns `str`, wrapper assigns fake confidence.
+Each pattern is assessed against the decision framework in Section 2.5.
 
-**Target:** `task_agent` returns `AgentOutput` with model-generated confidence.
+### 3.1 reflection.py
 
-#### Change task_agent
+**Decision Framework:**
+- ✅ Has retry loop (produce → critique → retry) → needs `@output_validator`
+- ❌ No persistent context injection → `@system_prompt` not needed
+- ✅ Has runtime config (acceptable_score) → needs `deps_type`
+- ❌ No dynamic data fetching → `@tool` not needed
 
-```python
-# BEFORE:
-task_agent = Agent(
-    model,
-    system_prompt=(
-        "You are a helpful assistant. Complete the given task to the best "
-        "of your ability. Be clear about any uncertainties or limitations "
-        "in your response. If you're not confident, say so."
-    ),
-    output_type=str,
-)
+**Assessment:** Needs refactoring. Manual while loop should become
+`@output_validator` + `ModelRetry`.
 
-# AFTER:
-task_agent = Agent(
-    model,
-    system_prompt=(
-        "You are a helpful assistant. Complete tasks and self-assess your "
-        "confidence in your response.\n\n"
-        "Rate your confidence 0.0-1.0 based on:\n"
-        "- 0.9-1.0: Certain, factual, well-documented information\n"
-        "- 0.7-0.9: Confident but some assumptions or uncertainty\n"
-        "- 0.5-0.7: Moderate confidence, may need verification\n"
-        "- Below 0.5: Low confidence, likely needs human review\n\n"
-        "Always explain your reasoning for the confidence level."
-    ),
-    output_type=AgentOutput,  # content + confidence + reasoning
-)
-```
+**Current issues:**
+- Manual `while` loop for produce/critique/retry cycle
+- Threshold hardcoded instead of via deps
 
-#### Simplified execute_with_oversight
+**Target approach:**
+- `@output_validator` calls critic, raises `ModelRetry` on low score
+- `ReflectionDeps(acceptable_score=8.0)` for threshold
+- Remove `reflect_once()`, `refiner_agent`, manual loop
 
-```python
-async def execute_with_oversight(
-    task: str,
-    policy: EscalationPolicy,
-    workflow: ApprovalWorkflow,
-    task_type: str = "",
-) -> tuple[str, bool, EscalationRequest | None]:
-    """
-    Execute a task with human oversight based on policy.
-
-    Args:
-        task: The task to execute.
-        policy: Escalation policy to apply.
-        workflow: Approval workflow to use.
-        task_type: Type of task for policy checks.
-
-    Returns:
-        Tuple of (result, was_escalated, escalation_request).
-    """
-    print(f"Executing task: {task[:50]}...")
-
-    result = await task_agent.run(task)
-    output = result.output  # AgentOutput with real confidence
-
-    should_escalate, reason = policy.should_escalate(output, task_type)
-
-    if should_escalate and reason:
-        print(f"  Escalating: {reason.value}")
-        request = workflow.submit_for_review(
-            output=output,
-            task_description=task,
-            reason=reason,
-        )
-        return output.content, True, request
-
-    print("  Auto-approved")
-    workflow.task_counter += 1
-    return output.content, False, None
-```
-
-#### What to Remove
-
-- `auto_confidence` parameter from `execute_with_oversight`
-- Manual `AgentOutput` construction with fake confidence
-
-#### What to Keep
-
-- All models: `AgentOutput`, `EscalationPolicy`, `ApprovalWorkflow`, etc.
-- `confidence_evaluator` agent (may be useful for validation)
-- `decision_agent` and `augment_decision()` function
+**Keep:** `self_reflect()` (different pattern), all Pydantic models,
+`critic_agent`
 
 ---
 
-### 2.3 memory.py
+### 3.2 human_in_loop.py
 
-**Current state:** f-string concatenation builds prompt with history.
+**Decision Framework:**
+- ❌ No retry loop → `@output_validator` not needed
+- ❌ No persistent context → `@system_prompt` not needed
+- ❌ No shared runtime state → `deps_type` not strictly needed
+- ❌ No dynamic fetching → `@tool` not needed
 
-**Target:** `@system_prompt` decorator injects history from deps.
+**Assessment:** Needs refactoring, but not for idiomatic reasons. Issue is
+`output_type=str` with fake confidence assigned by wrapper.
 
-#### Deps Definition
+**Current issues:**
+- `task_agent` returns `str`, then wrapper creates `AgentOutput` with
+  `auto_confidence` parameter (fake confidence)
+- Model should self-assess confidence, not have it assigned
 
-```python
-from dataclasses import dataclass
-from typing import Union
+**Target approach:**
+- Change `output_type=AgentOutput` so model returns confidence directly
+- Remove `auto_confidence` parameter
+- System prompt instructs model on confidence rating
 
-MemoryType = Union[BufferMemory, WindowMemory, SummaryMemory]
-
-
-@dataclass
-class MemoryDeps:
-    """Dependencies for memory-enabled conversation."""
-    memory: MemoryType
-```
-
-#### Target Architecture
-
-```python
-from pydantic_ai import Agent, RunContext
-
-model = get_model()
-
-conversational_agent = Agent(
-    model,
-    system_prompt=(
-        "You are a helpful assistant with conversation memory. "
-        "Use the provided context from previous messages to maintain "
-        "continuity and provide relevant responses. "
-        "Reference previous topics when appropriate."
-    ),
-    deps_type=MemoryDeps,
-    output_type=str,
-)
-
-
-@conversational_agent.system_prompt
-def inject_memory_context(ctx: RunContext[MemoryDeps]) -> str:
-    """Inject conversation history into system prompt."""
-    context = ctx.deps.memory.get_context()
-    if not context:
-        return ""
-    return (
-        f"\nConversation history:\n{context}\n\n"
-        f"Respond to the latest user message while maintaining context."
-    )
-```
-
-#### Simplified Public API
-
-```python
-async def chat_with_memory(
-    memory: MemoryType,
-    user_input: str,
-) -> str:
-    """
-    Process a user message with memory context.
-
-    Args:
-        memory: Memory instance to use for context.
-        user_input: The user's message.
-
-    Returns:
-        AI response string.
-    """
-    memory.add_user_message(user_input)
-    deps = MemoryDeps(memory=memory)
-
-    result = await conversational_agent.run(user_input, deps=deps)
-    response = result.output
-
-    memory.add_ai_message(response)
-    return response
-```
-
-#### What Changes
-
-- No f-string prompt building in `chat_with_memory` body
-- Context injection via `@system_prompt` decorator
-- Deps pattern for memory passing
-
-#### What to Keep
-
-- All memory classes: `BufferMemory`, `WindowMemory`, `SummaryMemory`
-- All models: `MemoryMessage`, `ConversationSummary`, `MemoryStats`
-- `summarizer_agent` and `SummaryMemory.summarize()` method
-- `run_conversation()` demo function
+**Keep:** All models, escalation logic, `decision_agent`, `augment_decision()`
 
 ---
 
-### 2.4 knowledge_retrieval.py
+### 3.3 memory.py
 
-**Current state:** RAGPipeline builds prompt with retrieved context via
-f-string.
+**Decision Framework:**
+- ❌ No retry loop → `@output_validator` not needed
+- ✅ Injects conversation history into system prompt → needs `@system_prompt`
+- ✅ Memory instance is shared state → needs `deps_type`
+- ❌ No dynamic fetching → `@tool` not needed
 
-**Target:** Tool-based retrieval during generation.
+**Assessment:** Already refactored. Uses `@system_prompt` and `MemoryDeps`.
 
-#### Deps Definition
+**Current state (already idiomatic):**
+- Has `MemoryDeps` dataclass with memory instance
+- Has `@conversational_agent.system_prompt` decorator
+- Uses `RunContext[MemoryDeps]` to access memory
 
-```python
-from dataclasses import dataclass
+**No changes needed.**
 
-
-@dataclass
-class RAGDeps:
-    """Dependencies for RAG pattern."""
-    store: VectorStore
-    top_k: int = 3
-    min_score: float = 0.1
-```
-
-#### Target Architecture
-
-```python
-from pydantic_ai import Agent, RunContext
-
-model = get_model()
-
-rag_agent = Agent(
-    model,
-    system_prompt=(
-        "You answer questions using retrieved context from a knowledge base. "
-        "ALWAYS use the search_knowledge tool to find relevant information "
-        "before answering. Base your answer ONLY on the retrieved content. "
-        "If no relevant information is found, say so clearly."
-    ),
-    deps_type=RAGDeps,
-    output_type=str,
-)
-
-
-@rag_agent.tool
-async def search_knowledge(
-    ctx: RunContext[RAGDeps],
-    query: str,
-) -> str:
-    """
-    Search the knowledge base for relevant information.
-
-    Args:
-        query: The search query to find relevant content.
-
-    Returns:
-        Retrieved context from the knowledge base.
-    """
-    chunks = ctx.deps.store.search(
-        query=query,
-        k=ctx.deps.top_k,
-        threshold=ctx.deps.min_score,
-    )
-
-    if not chunks:
-        return "No relevant information found in the knowledge base."
-
-    context_parts = []
-    for rc in chunks:
-        source = rc.chunk.metadata.get("title", "unknown")
-        context_parts.append(f"[Source: {source}]\n{rc.chunk.content}")
-
-    return "\n\n---\n\n".join(context_parts)
-```
-
-#### Simplified RAGPipeline
-
-```python
-@dataclass
-class RAGPipeline:
-    """RAG pipeline using tool-based retrieval."""
-
-    store: VectorStore
-    top_k: int = 3
-    min_score: float = 0.1
-
-    async def query(self, question: str) -> RAGResponse:
-        """
-        Process a question through the RAG pipeline.
-
-        Args:
-            question: User's question.
-
-        Returns:
-            RAGResponse with answer and metadata.
-        """
-        deps = RAGDeps(
-            store=self.store,
-            top_k=self.top_k,
-            min_score=self.min_score,
-        )
-
-        result = await rag_agent.run(question, deps=deps)
-
-        return RAGResponse(
-            answer=result.output,
-            query=question,
-            context_chunks=[],  # Tool handles retrieval internally
-            confidence=0.8,  # Could extract from result metadata
-        )
-
-    async def batch_query(self, questions: list[str]) -> list[RAGResponse]:
-        """Process multiple questions."""
-        return [await self.query(q) for q in questions]
-```
-
-#### What to Remove
-
-- `expand_query` parameter (agent decides when to refine)
-- `query_agent` (no longer needed)
-- `_format_context()` method (tool handles formatting)
-- Manual prompt construction in `query()` method
-
-#### What to Keep
-
-- All utility functions: `simple_embedding()`, `cosine_similarity()`,
-  `chunk_text()`
-- All models: `Document`, `Chunk`, `RetrievedChunk`, `RAGResponse`, etc.
-- `VectorStore` class
-- `build_knowledge_base()` function
+**Keep:** All memory classes, all models, `summarizer_agent`,
+`run_conversation()`
 
 ---
 
-### 2.5 planning.py
+### 3.4 knowledge_retrieval.py
 
-**Current state:** Manual for-loop executes plan steps with f-string prompts.
+**Decision Framework:**
+- ❌ No retry loop → `@output_validator` not needed
+- ❌ Context is retrieved, not persistent → `@system_prompt` not ideal
+- ✅ VectorStore is shared service → needs `deps_type`
+- ✅ Agent should search dynamically → needs `@tool`
 
-**Target:** `@output_validator` for step execution with RunContext state.
+**Assessment:** Needs refactoring. Current implementation pre-retrieves and
+builds prompt with f-string. Should use `@tool` for dynamic retrieval.
 
-**Assessment:** Needs full refactor.
+**Current issues:**
+- `RAGPipeline.query()` retrieves chunks first, then builds prompt
+- `expand_query` parameter adds complexity
+- Agent doesn't control when/how to search
 
-#### Deps Definition
+**Target approach:**
+- `@rag_agent.tool` for `search_knowledge` function
+- `RAGDeps` with `store`, `top_k`, `min_score`
+- Agent decides when to search based on question
+- Remove `expand_query`, `query_agent`, `_format_context()`
 
-```python
-@dataclass
-class PlanningDeps:
-    """Dependencies for planning pattern."""
-    plan: Plan | None = None
-    completed_steps: list[StepResult] = field(default_factory=list)
-    max_replans: int = 2
-```
-
-#### Changes Required
-
-1. Add `deps_type=PlanningDeps` to `executor_agent`
-2. Replace f-string prompts (lines 151-154, 179-183, 217-221, 296-299) with
-   `@system_prompt` decorators
-3. Convert step execution loop to use `@output_validator` for iterative
-   validation
-4. Pass plan state via deps instead of function parameters
-
-#### What to Keep
-
-- All Pydantic models: `Plan`, `PlanStep`, `StepResult`, `ExecutionResult`
-- `planner_agent`, `executor_agent`, `replanner_agent`
-- `create_plan()`, `execute_plan()`, `run_planning()` functions (with new
-  signatures)
+**Keep:** All utility functions, all models, `VectorStore`,
+`build_knowledge_base()`
 
 ---
 
-### 2.6 prompt_chaining.py
+### 3.5 planning.py
 
-**Current state:** Heavy f-string prompt building (lines 112-141).
+**Decision Framework:**
+- ✅ Has step execution validation → could use `@output_validator`
+- ✅ Injects completed steps as context → could use `@system_prompt`
+- ✅ Plan state is shared across steps → needs `deps_type`
+- ❌ No dynamic fetching → `@tool` not needed
 
-**Target:** `@system_prompt` decorator for chain context injection.
+**Assessment:** Needs refactoring. Manual for-loop with f-string prompts.
 
-**Assessment:** Minor changes.
+**Current issues:**
+- Manual for-loop executes plan steps
+- f-string prompts inject completed step results
+- Plan state passed as function parameters
 
-#### Deps Definition
+**Target approach:**
+- `PlanningDeps` with `plan`, `completed_steps`, `max_replans`
+- `@system_prompt` to inject completed step context
+- Consider `@output_validator` for step validation (optional)
+- Pass state via deps instead of parameters
 
-```python
-@dataclass
-class ChainDeps:
-    """Dependencies for prompt chaining."""
-    previous_outputs: list[str] = field(default_factory=list)
-    step_index: int = 0
-```
-
-#### Changes Required
-
-1. Add `deps_type=ChainDeps` to chain agents
-2. Replace f-string prompt building with `@system_prompt`:
-   ```python
-   @chain_agent.system_prompt
-   def inject_chain_context(ctx: RunContext[ChainDeps]) -> str:
-       if not ctx.deps.previous_outputs:
-           return ""
-       prev = "\n".join(ctx.deps.previous_outputs)
-       return f"\nPrevious steps output:\n{prev}"
-   ```
-
-#### What to Keep
-
-- All models and existing structure
-- Chain execution logic
+**Keep:** All models, all agents, core function signatures
 
 ---
 
-### 2.7 routing.py
+### 3.6 prompt_chaining.py
 
-**Current state:** Moderate f-string prompts (lines 194, 205).
+**Decision Framework:**
+- ❌ No retry loop → `@output_validator` not needed
+- ❌ No persistent context (step data is user message) → `@system_prompt` not
+  needed
+- ❌ No shared runtime config → `deps_type` not needed
+- ❌ No dynamic fetching → `@tool` not needed
 
-**Target:** `@system_prompt` for handler context.
+**Assessment:** Already idiomatic. No changes needed.
 
-**Assessment:** Minor changes.
+**Why f-strings are correct here:**
+- f-strings build the **user message** with data from previous steps
+- This is task input, not system context injection
+- Each step's output becomes the next step's input - that's prompt chaining
+- `@system_prompt` would be wrong: step data isn't persistent agent context
 
-#### Changes Required
+**No changes needed.**
 
-1. Replace f-string prompts in handler functions with `@system_prompt`
-2. Optionally add `deps_type` for route tracking state
-
-#### What to Keep
-
-- `RouteDecision`, `RouteHandler` models
-- `router_agent`, intent classification logic
-- All handler agents
-
----
-
-### 2.8 parallelization.py
-
-**Current state:** Moderate f-string prompts (lines 152-154, 202-203, 252-254).
-
-**Target:** `@system_prompt` for parallel task context.
-
-**Assessment:** Minor changes.
-
-#### Changes Required
-
-1. Replace f-string prompts with `@system_prompt` decorators
-2. Already properly async/concurrent - no structural changes needed
-
-#### What to Keep
-
-- All parallel execution patterns (sectioning, voting, map-reduce)
-- `asyncio.gather()` usage
-- All models
+**Keep:** All models, all agents, chain execution logic
 
 ---
 
-### 2.9 tool_use.py
+### 3.7 routing.py
 
-**Current state:** Already uses `RunContext[ToolDependencies]` and `@tool`
-decorators properly.
+**Decision Framework:**
+- ❌ No retry loop → `@output_validator` not needed
+- ❌ f-strings build user messages (task input) → `@system_prompt` not needed
+- ❌ No shared state between router and handlers → `deps_type` not needed
+- ❌ No dynamic fetching → `@tool` not needed
 
-**Target:** No changes needed.
+**Assessment:** Already idiomatic. No changes needed.
 
-**Assessment:** Already idiomatic - reference implementation.
+**Why f-strings are correct here:**
+- `f"Classify the intent of this customer query:\n\n{user_query}"` - user message
+- `f"Handle this customer query:\n\n{user_query}"` - user message
+- Same pattern as prompt_chaining: constructing task input, not system context
 
-#### Reference Patterns
-
-This file demonstrates correct usage of:
-- `deps_type=ToolDependencies` (line 86)
-- `RunContext[ToolDependencies]` in tools (lines 132-135)
-- `@agent.tool` and `@agent.tool_plain` decorators
-
-Use as template for other pattern refactoring.
-
----
-
-### 2.10 multi_agent.py
-
-**Current state:** Good RunContext usage, moderate f-string prompts (lines
-284-287, 328-332, 369-371).
-
-**Target:** Replace f-string prompts with `@system_prompt`.
-
-**Assessment:** Minor changes.
-
-#### Changes Required
-
-1. Replace f-string prompt building with `@system_prompt` decorators
-2. Already good use of `RunContext` and `deps_type=CollaborationContext`
-
-#### What to Keep
-
-- `CollaborationContext` deps pattern (already good)
-- Supervisor/worker agent structure
-- All models
+**Keep:** All models, `router_agent`, handler agents, `INTENT_HANDLERS` mapping
 
 ---
 
-### 2.11 guardrails.py
+### 3.8 parallelization.py
 
-**Current state:** Moderate f-string prompts (lines 511, 522).
+**Decision Framework:**
+- ❌ No retry loop → `@output_validator` not needed
+- ❌ f-strings build user messages (task inputs) → `@system_prompt` not needed
+- ❌ Parallel workers are independent → `deps_type` not needed
+- ❌ No dynamic fetching → `@tool` not needed
 
-**Target:** `@system_prompt` for guardrail context.
+**Assessment:** Already idiomatic. No changes needed.
 
-**Assessment:** Minor changes.
+**Why f-strings are correct here:**
+- `f"Topic: {topic}\nSection focus: {section_name}..."` - task input for worker
+- `f"Synthesize these section results:\n\n{sections_text}"` - task input
+- `f"Voter {voter_id}: Answer this question:\n{question}"` - task input
+- All construct what the user/orchestrator is asking each worker to do
 
-#### Deps Definition (Optional)
-
-```python
-@dataclass
-class GuardrailDeps:
-    """Dependencies for guardrail tracking."""
-    violation_log: list[str] = field(default_factory=list)
-```
-
-#### Changes Required
-
-1. Extract prompt text to `@system_prompt` decorators
-2. Optionally add `RunContext` for violation log state
-
-#### What to Keep
-
-- All guardrail models and validation logic
-- Input/output filter agents
+**Keep:** All parallel patterns (sectioning, voting, map-reduce),
+`asyncio.gather()`, all models
 
 ---
 
-### 2.12 learning.py
+### 3.9 tool_use.py
 
-**Current state:** Moderate f-string prompts (lines 424, 450-452, 480-483).
+**Decision Framework:**
+- ❌ No retry loop → `@output_validator` not needed
+- ❌ No persistent context → `@system_prompt` not needed
+- ✅ Shared services (calculator, etc.) → has `deps_type`
+- ✅ Dynamic tool calls → has `@tool`
 
-**Target:** `@system_prompt` with RunContext for experience store.
+**Assessment:** Already idiomatic. Reference implementation.
 
-**Assessment:** Minor changes.
+**Current state (already idiomatic):**
+- Has `deps_type=ToolDependencies`
+- Has `RunContext[ToolDependencies]` in tools
+- Uses `@agent.tool` and `@agent.tool_plain` decorators
 
-#### Deps Definition
-
-```python
-@dataclass
-class LearningDeps:
-    """Dependencies for learning pattern."""
-    experience_store: ExperienceStore
-```
-
-#### Changes Required
-
-1. Add `deps_type=LearningDeps` to learning agent
-2. Replace f-string prompts with `@system_prompt`:
-   ```python
-   @learning_agent.system_prompt
-   def inject_experience(ctx: RunContext[LearningDeps]) -> str:
-       relevant = ctx.deps.experience_store.get_relevant(...)
-       return f"\nRelevant past experiences:\n{relevant}"
-   ```
-
-#### What to Keep
-
-- `ExperienceStore` class
-- All learning models
+**No changes needed.** Use as template for other patterns.
 
 ---
 
-### 2.13 resource_aware.py
+### 3.10 multi_agent.py
 
-**Current state:** Moderate f-string prompts (lines 442-443, 511).
+**Decision Framework:**
+- ❌ No retry loop → `@output_validator` not needed
+- ❓ f-strings may be task assignment → evaluate case-by-case
+- ✅ Collaboration state → already has `deps_type=CollaborationContext`
+- ❌ No dynamic fetching → `@tool` not needed
 
-**Target:** `@system_prompt` with RunContext for budget tracking.
+**Assessment:** Mostly idiomatic. Already uses `RunContext` and `deps_type`.
+Review f-string usage - likely user messages for task assignment.
 
-**Assessment:** Minor changes.
+**Evaluate:** Are f-strings building task assignments (user messages) or
+injecting collaboration context (system prompt)?
 
-#### Deps Definition
-
-```python
-@dataclass
-class ResourceDeps:
-    """Dependencies for resource-aware execution."""
-    budget: ResourceBudget
-    usage_tracker: UsageTracker
-```
-
-#### Changes Required
-
-1. Add `deps_type=ResourceDeps` to resource-aware agents
-2. Replace complexity assessment prompt with `@system_prompt`
-3. Use RunContext for budget state instead of passing around objects
-
-#### What to Keep
-
-- `ResourceBudget`, `UsageTracker` classes
-- Complexity estimation logic
+**Keep:** `CollaborationContext` deps, supervisor/worker structure, all models
 
 ---
 
-### 2.14 evaluation.py
+### 3.11 guardrails.py
 
-**Current state:** Light f-string prompts (lines 548, 641-643). LLMJudge
-prompt already in system_prompt.
+**Decision Framework:**
+- ❌ Guardrails are pass/fail gates, not retry mechanisms → `@output_validator`
+  not appropriate (toxic content won't improve with retry)
+- ❌ Single f-string builds user message → `@system_prompt` not needed
+- ❌ Guardrail state not shared with agent → `deps_type` not needed
+- ❌ No dynamic fetching → `@tool` not needed
 
-**Target:** Minor `@system_prompt` cleanup.
+**Assessment:** Already idiomatic. No changes needed.
 
-**Assessment:** Minor changes.
+**Why guardrails don't use `@output_validator`:**
+- `@output_validator` is for quality improvement with retry feedback
+- Guardrails are safety gates that block/filter, not improve
+- If content is toxic, retrying won't produce safe content
+- Guardrails intentionally run AFTER the main agent as separate validation
 
-#### Changes Required
+**Why this is a Python pattern, not an agent pattern:**
+- Core logic is regex/pattern matching (`InputGuardrail`, `OutputGuardrail`)
+- Agents are simple pass-through (`safety_agent`, `task_agent`)
+- `GuardedExecutor` orchestrates Python checks around agent calls
 
-1. Small f-string prompts could move to `@system_prompt`
-2. Overall clean usage - minimal changes needed
-
-#### What to Keep
-
-- `LLMJudge` agent (already well-structured)
-- All evaluation models and metrics
-
----
-
-### 2.15 prioritization.py
-
-**Current state:** Light f-string prompts (lines 641-643). System prompt
-inline in `_get_agent` (lines 607-620).
-
-**Target:** Extract to `@system_prompt` decorator.
-
-**Assessment:** Minor changes.
-
-#### Changes Required
-
-1. Move inline system prompt to `@system_prompt` decorator
-2. Extract prioritization prompt building to decorator
-
-#### What to Keep
-
-- Prioritization logic
-- All models
+**Keep:** All guardrail classes, all models, `safety_agent`, `task_agent`
 
 ---
 
-## 3. Test Updates Required
+### 3.12 learning.py
+
+**Decision Framework:**
+- ❌ No retry loop → `@output_validator` not needed
+- ✅ Injects past experiences into context → needs `@system_prompt`
+- ✅ ExperienceStore is shared service → needs `deps_type`
+- ❌ No dynamic fetching → `@tool` not needed
+
+**Assessment:** Needs refactoring. f-strings inject experience context into
+system prompt - should use `@system_prompt` decorator.
+
+**Target approach:**
+- `LearningDeps` with `experience_store`
+- `@system_prompt` to inject relevant experiences
+- Pass store via deps instead of building prompt in function
+
+**Keep:** `ExperienceStore`, all learning models
+
+---
+
+### 3.13 resource_aware.py
+
+**Decision Framework:**
+- ❌ No retry loop → `@output_validator` not needed
+- ✅ Injects budget/limits into context → needs `@system_prompt`
+- ✅ Budget and tracker are shared state → needs `deps_type`
+- ❌ No dynamic fetching → `@tool` not needed
+
+**Assessment:** Needs refactoring. Budget context should use `@system_prompt`
+and deps pattern.
+
+**Target approach:**
+- `ResourceDeps` with `budget`, `usage_tracker`
+- `@system_prompt` to inject resource constraints
+- Pass trackers via deps instead of function parameters
+
+**Keep:** `ResourceBudget`, `UsageTracker`, complexity estimation logic
+
+---
+
+### 3.14 evaluation.py
+
+**Decision Framework:**
+- ❌ No retry loop → `@output_validator` not needed
+- ❓ Light f-strings → evaluate if user messages or context
+- ❓ Could add deps for evaluation config → optional
+- ❌ No dynamic fetching → `@tool` not needed
+
+**Assessment:** Mostly idiomatic. `LLMJudge` already well-structured. Review
+light f-string usage but likely already correct.
+
+**Keep:** `LLMJudge` agent, all evaluation models and metrics
+
+---
+
+### 3.15 prioritization.py
+
+**Decision Framework:**
+- ❌ No retry loop → `@output_validator` not needed
+- ❓ Inline system prompt in `_get_agent` → could extract to decorator
+- ❓ Could add deps for priority config → optional
+- ❌ No dynamic fetching → `@tool` not needed
+
+**Assessment:** Review needed. Inline system prompt construction could use
+`@system_prompt` decorator for cleaner separation. Light changes.
+
+**Keep:** Prioritization logic, all models
+
+---
+
+## 4. Test Updates Required
 
 ### Full Refactor Patterns
 
@@ -862,7 +536,7 @@ inline in `_get_agent` (lines 607-620).
 
 ---
 
-## 4. Verification Checklist
+## 5. Verification Checklist
 
 For each refactored pattern, verify:
 
@@ -877,7 +551,7 @@ For each refactored pattern, verify:
 
 ---
 
-## 5. Definition of Done
+## 6. Definition of Done
 
 A pattern is "Idiomatic PydanticAI" when:
 
@@ -890,7 +564,7 @@ A pattern is "Idiomatic PydanticAI" when:
 
 ---
 
-## 6. Implementation Order
+## 7. Implementation Order
 
 ### Phase 1: Full Refactors (establish patterns)
 
@@ -918,22 +592,113 @@ A pattern is "Idiomatic PydanticAI" when:
 
 ---
 
-## 7. Pattern Assessment Summary
+## 8. Pattern Assessment Summary
 
 | Pattern | Assessment | Effort |
 |---------|------------|--------|
-| reflection | Full refactor | High |
-| human_in_loop | Full refactor | Medium |
-| memory | Full refactor | Medium |
-| knowledge_retrieval | Full refactor | Medium |
-| planning | Full refactor | High |
-| prompt_chaining | Minor changes | Low |
-| routing | Minor changes | Low |
-| parallelization | Minor changes | Low |
+| reflection | Needs refactor (`@output_validator`) | High |
+| human_in_loop | Needs refactor (`output_type`) | Medium |
+| memory | **Already idiomatic** | None |
+| knowledge_retrieval | Needs refactor (`@tool`) | Medium |
+| planning | Needs refactor (`deps` + `@system_prompt`) | High |
+| prompt_chaining | **Already idiomatic** | None |
+| routing | **Already idiomatic** | None |
+| parallelization | **Already idiomatic** | None |
 | tool_use | **Already idiomatic** | None |
-| multi_agent | Minor changes | Low |
-| guardrails | Minor changes | Low |
-| learning | Minor changes | Medium |
-| resource_aware | Minor changes | Medium |
-| evaluation | Minor changes | Low |
-| prioritization | Minor changes | Low |
+| multi_agent | Mostly idiomatic (has `deps`) | Low |
+| guardrails | **Already idiomatic** | None |
+| learning | Needs refactor (`@system_prompt` + `deps`) | Medium |
+| resource_aware | Needs refactor (`@system_prompt` + `deps`) | Medium |
+| evaluation | Mostly idiomatic | Low |
+| prioritization | Review needed | Low |
+
+---
+
+## 9. Pre-Implementation Protocol
+
+Before implementing any pattern refactoring, follow this protocol to ensure
+alignment between current code and target architecture.
+
+### 8.1 Generate Gap Analysis
+
+For each pattern, the implementing agent MUST:
+
+1. **Read the current source file**:
+   ```bash
+   # Read entire source
+   cat src/agentic_patterns/{pattern}.py
+   ```
+
+2. **Read the corresponding test file**:
+   ```bash
+   cat tests/test_{pattern}.py
+   ```
+
+3. **Read the documentation** (if exists):
+   ```bash
+   cat docs/patterns/*{pattern}*.md
+   ```
+
+4. **Compare against spec section 2.X** for this pattern
+
+5. **Generate a gap analysis** answering:
+   - What does current code do vs. what spec requires?
+   - Which functions/classes need modification?
+   - Which functions/classes need removal?
+   - Which tests will break and need updates?
+   - Are there any API compatibility concerns?
+
+### 8.2 Write Implementation Plan
+
+Create a plan file at `docs/plans/{pattern}-refactor.md` with:
+
+```markdown
+# {Pattern} Refactoring Plan
+
+## Current State
+- Brief description of current implementation
+- Key deviations from spec
+
+## Gap Analysis
+
+### Code Changes Required
+| File | Location | Current | Target | Action |
+|------|----------|---------|--------|--------|
+| {file} | line X-Y | description | spec requirement | add/modify/remove |
+
+### Test Changes Required
+| Test File | Test Name | Change Required |
+|-----------|-----------|-----------------|
+| test_{pattern}.py | test_xyz | description |
+
+## Implementation Steps
+1. Step one
+2. Step two
+...
+
+## Verification
+- [ ] Lint passes
+- [ ] Tests pass
+- [ ] Demo runs
+```
+
+### 8.3 Execute Implementation
+
+After plan is written:
+1. Implement changes per plan
+2. Verify each checklist item from Section 4
+3. Run tests and fix any failures
+
+### 8.4 Cleanup
+
+After pattern is verified complete:
+1. **Delete the plan file**: `rm docs/plans/{pattern}-refactor.md`
+2. Mark pattern as done in any tracking system
+
+### 8.5 Rationale
+
+This protocol ensures:
+- **No blind implementation**: Agent understands current state before changing
+- **Traceable decisions**: Plan documents why changes were made
+- **Clean workspace**: Ephemeral plans don't clutter repo long-term
+- **Consistent approach**: Each pattern follows same process

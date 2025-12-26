@@ -31,6 +31,7 @@ from enum import Enum
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic_ai import Agent
+from pydantic_ai import RunContext
 
 from agentic_patterns._models import get_model
 
@@ -210,12 +211,10 @@ class ExperienceStore:
     def get_stats(self) -> LearningStats:
         """Get learning statistics."""
         successes = sum(
-            1 for e in self.experiences
-            if e.outcome == ExperienceType.SUCCESS
+            1 for e in self.experiences if e.outcome == ExperienceType.SUCCESS
         )
         failures = sum(
-            1 for e in self.experiences
-            if e.outcome == ExperienceType.FAILURE
+            1 for e in self.experiences if e.outcome == ExperienceType.FAILURE
         )
         total = len(self.experiences)
         rate = successes / total if total > 0 else 0.0
@@ -241,7 +240,8 @@ class ExperienceStore:
             List of failure feedback strings.
         """
         failures = [
-            e for e in self.experiences
+            e
+            for e in self.experiences
             if e.task_type == task_type and e.outcome == ExperienceType.FAILURE
         ]
         return [e.feedback for e in failures if e.feedback]
@@ -335,6 +335,17 @@ class FeedbackLoop:
 # Initialize model
 model = get_model()
 
+
+@dataclass
+class LearningDeps:
+    """Dependencies for learning-enabled agents."""
+
+    store: ExperienceStore
+    task_type: str = ""
+    use_examples: bool = True
+    max_examples: int = 3
+
+
 # Prompt adapter agent - refines prompts based on learnings
 prompt_adapter_agent = Agent(
     model,
@@ -347,16 +358,41 @@ prompt_adapter_agent = Agent(
     output_type=AdaptedPrompt,
 )
 
-# Task agent - performs tasks with few-shot examples
-task_agent = Agent(
+# Task agent - performs tasks with few-shot examples via @system_prompt
+task_agent: Agent[LearningDeps, str] = Agent(
     model,
     system_prompt=(
         "You are a helpful assistant. Complete the given task. "
-        "If examples are provided, use them as guidance for the "
-        "expected format and style of your response."
+        "Use any provided examples as guidance for the expected "
+        "format and style of your response."
     ),
+    deps_type=LearningDeps,
     output_type=str,
 )
+
+
+@task_agent.system_prompt
+def inject_examples(ctx: RunContext[LearningDeps]) -> str:
+    """Inject few-shot examples from experience store into system prompt."""
+    if not ctx.deps.use_examples or not ctx.deps.task_type:
+        return ""
+
+    examples = ctx.deps.store.get_relevant_examples(
+        ctx.deps.task_type,
+        k=ctx.deps.max_examples,
+    )
+
+    if not examples:
+        return ""
+
+    lines = ["Here are some successful examples for reference:"]
+    for i, ex in enumerate(examples, 1):
+        lines.append(f"\nExample {i}:")
+        lines.append(f"Input: {ex.input_text[:200]}")
+        lines.append(f"Output: {ex.output_text[:200]}")
+
+    return "\n".join(lines)
+
 
 # Feedback evaluator - assesses feedback quality
 feedback_evaluator = Agent(
@@ -401,6 +437,9 @@ async def run_with_learning(
     """
     Run a task with few-shot learning context.
 
+    The agent uses @system_prompt to inject relevant examples from
+    the experience store, enabling few-shot learning.
+
     Args:
         task_type: Type of task to perform.
         input_text: Input for the task.
@@ -412,19 +451,20 @@ async def run_with_learning(
     """
     print(f"Running task: {task_type}")
 
-    # Get relevant examples for few-shot learning
-    context = ""
+    # Create deps - examples are injected via @system_prompt decorator
+    deps = LearningDeps(
+        store=store,
+        task_type=task_type,
+        use_examples=use_examples,
+    )
+
     if use_examples:
         examples = store.get_relevant_examples(task_type, k=3)
         if examples:
-            context = format_examples_as_context(examples)
             print(f"  Using {len(examples)} examples for context")
 
-    # Build prompt
-    prompt = f"{context}\n\nTask: {input_text}" if context else input_text
-
-    # Run task
-    result = await task_agent.run(prompt)
+    # Run task - examples injected automatically via system prompt
+    result = await task_agent.run(input_text, deps=deps)
     output = result.output
 
     print("  Task complete")

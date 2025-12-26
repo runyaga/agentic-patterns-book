@@ -35,26 +35,54 @@ class VectorStore:
         return sorted_chunks[:k]
 ```
 
+### Idiomatic Pattern (Tool-Based Retrieval)
+
+The agent uses a `@tool` to dynamically search the knowledge base, deciding
+when and what to search based on the question.
+
+```python
+@dataclass
+class RAGDeps:
+    """Dependencies for RAG agent with dynamic search."""
+    store: VectorStore
+    top_k: int = 3
+    min_score: float = 0.1
+
+# Agent with tool-based retrieval
+rag_agent: Agent[RAGDeps, str] = Agent(
+    model,
+    system_prompt=(
+        "Answer questions using the knowledge base. "
+        "Use the search_knowledge tool to find relevant information."
+    ),
+    deps_type=RAGDeps,
+)
+
+@rag_agent.tool
+async def search_knowledge(ctx: RunContext[RAGDeps], query: str) -> str:
+    """Search the knowledge base for information relevant to the query."""
+    retrieved = ctx.deps.store.search(query, k=ctx.deps.top_k)
+    if not retrieved:
+        return "No relevant information found."
+    return "\n".join(f"[{r.rank}]: {r.chunk.content}" for r in retrieved)
+```
+
 ### RAG Pipeline
 
 ```python
 @dataclass
 class RAGPipeline:
     store: VectorStore
+    top_k: int = 3
 
     async def query(self, question: str) -> RAGResponse:
-        # 1. Retrieve
-        chunks = self.store.search(question, k=3)
-        context = "\n".join(f"- {c.content}" for c in chunks)
+        # Create deps - agent uses tool to search as needed
+        deps = RAGDeps(store=self.store, top_k=self.top_k)
 
-        # 2. Generate with Context
-        result = await rag_agent.run(
-            f"Context:\n{context}\n\n"
-            f"Question: {question}\n"
-            f"Answer using ONLY the context."
-        )
-        
-        return RAGResponse(answer=result.output, sources=chunks)
+        # Agent dynamically decides when to search
+        result = await rag_agent.run(question, deps=deps)
+
+        return RAGResponse(answer=result.output, ...)
 ```
 
 ## Use Cases
