@@ -26,6 +26,7 @@ from pydantic_ai import RunContext
 from agentic_patterns._models import get_model
 
 
+# --8<-- [start:models]
 class WeatherResult(BaseModel):
     """Result from weather tool."""
 
@@ -70,8 +71,10 @@ class ToolDependencies:
     # Simulated external data sources
     weather_data: dict[str, dict] | None = None
     search_data: dict[str, list[str]] | None = None
+# --8<-- [end:models]
 
 
+# --8<-- [start:agent]
 # Initialize the model
 model = get_model()
 
@@ -86,8 +89,10 @@ tool_agent = Agent(
     deps_type=ToolDependencies,
     output_type=ToolResponse,
 )
+# --8<-- [end:agent]
 
 
+# --8<-- [start:tools]
 # Default simulated weather data
 DEFAULT_WEATHER_DATA = {
     "london": {
@@ -243,8 +248,10 @@ def get_current_time() -> str:
         Current datetime as a formatted string.
     """
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+# --8<-- [end:tools]
 
 
+# --8<-- [start:run]
 async def run_tool_agent(
     query: str,
     deps: ToolDependencies | None = None,
@@ -331,6 +338,7 @@ def standalone_calculate(expression: str) -> CalculationResult:
             result=0.0,
             formatted=f"Error: {e}",
         )
+# --8<-- [end:run]
 
 
 if __name__ == "__main__":

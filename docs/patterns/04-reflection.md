@@ -4,55 +4,24 @@ Self-correction via automated validation loops.
 
 ## Implementation
 
-Source: `src/agentic_patterns/reflection.py`
+Source: [`src/agentic_patterns/reflection.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/reflection.py)
 
-### Idiomatic Pattern (ModelRetry)
-
-Instead of a manual `while` loop, we use PydanticAI's `output_validator` (or `result_validator` in older versions) to critique the output. If the quality is insufficient, we raise `ModelRetry`, which automatically feeds the error back to the model for a new attempt.
+### Data Models & Dependencies
 
 ```python
-# 1. Define Dependencies
-@dataclass
-class ReflectionDeps:
-    critic_agent: Agent
-
-# 2. Define Producer with Retry Policy
-producer_agent = Agent(
-    model,
-    deps_type=ReflectionDeps,
-    output_type=ProducerOutput,
-    retries=3  # Allow 3 attempts
-)
-
-# 3. Define the Validator Hook
-@producer_agent.output_validator
-async def validate_quality(ctx: RunContext[ReflectionDeps], result: ProducerOutput) -> ProducerOutput:
-    # Call the critic agent
-    critique = await ctx.deps.critic_agent.run(result.content)
-    
-    # Check thresholds
-    if critique.score < 8.0:
-        # PydanticAI Magic: This raises an error that the model sees, 
-        # prompting it to fix the specific issues mentioned.
-        raise ModelRetry(
-            f"Score {critique.score}/10. Feedback: {critique.feedback}"
-        )
-        
-    return result
+--8<-- "src/agentic_patterns/reflection.py:models"
 ```
 
-### Execution
-
-The caller code is incredibly simple because the loop is internal.
+### Agents with Output Validator
 
 ```python
-async def run_reflection(task: str):
-    # Dependencies needed for the validation hook
-    deps = ReflectionDeps(critic_agent=critic_agent)
-    
-    # Run - this single call handles the generate -> critique -> retry loop
-    result = await producer_agent.run(task, deps=deps)
-    return result.output
+--8<-- "src/agentic_patterns/reflection.py:agents"
+```
+
+### Reflection Execution
+
+```python
+--8<-- "src/agentic_patterns/reflection.py:reflection"
 ```
 
 ## Use Cases

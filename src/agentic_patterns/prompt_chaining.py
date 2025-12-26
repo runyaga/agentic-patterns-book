@@ -14,11 +14,13 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 from pydantic import Field
-from pydantic_ai import Agent, RunContext
+from pydantic_ai import Agent
+from pydantic_ai import RunContext
 
 from agentic_patterns._models import get_model
 
 
+# --8<-- [start:models]
 class ResearchSummary(BaseModel):
     """Structured summary of market research findings."""
 
@@ -60,7 +62,7 @@ class MarketingEmail(BaseModel):
 @dataclass
 class ChainDeps:
     """Dependencies for passing context between chain steps."""
-    
+
     # We store all potential inputs here.
     # In a real app, you might use specific deps for each agent,
     # but a shared context is common for chains.
@@ -69,9 +71,12 @@ class ChainDeps:
     trends: TrendAnalysis | None = None
 
 
+# --8<-- [end:models]
+
 # Initialize the model
 model = get_model()
 
+# --8<-- [start:agents]
 # --- Agent 1: Summarizer ---
 summarizer_agent = Agent(
     model,
@@ -83,6 +88,7 @@ summarizer_agent = Agent(
     deps_type=ChainDeps,
     output_type=ResearchSummary,
 )
+
 
 @summarizer_agent.system_prompt
 def inject_raw_text(ctx: RunContext[ChainDeps]) -> str:
@@ -104,16 +110,17 @@ trend_analyzer_agent = Agent(
     output_type=TrendAnalysis,
 )
 
+
 @trend_analyzer_agent.system_prompt
 def inject_summary(ctx: RunContext[ChainDeps]) -> str:
     """Inject the summary for trend analysis."""
     if not ctx.deps.summary:
         return "No summary provided."
-    
+
     s = ctx.deps.summary
     findings = "\n".join(f"- {f}" for f in s.key_findings)
     themes = "\n".join(f"- {t}" for t in s.main_themes)
-    
+
     return (
         f"Research Summary:\n"
         f"Key Findings:\n{findings}\n"
@@ -135,20 +142,27 @@ email_drafter_agent = Agent(
     output_type=MarketingEmail,
 )
 
+
 @email_drafter_agent.system_prompt
 def inject_trends(ctx: RunContext[ChainDeps]) -> str:
     """Inject trends for email drafting."""
     if not ctx.deps.trends:
         return "No trends provided."
-    
+
     trend_text = []
     for t in ctx.deps.trends.trends:
         data = ", ".join(t.supporting_data)
-        trend_text.append(f"Trend: {t.name}\nDesc: {t.description}\nData: {data}")
-    
+        trend_text.append(
+            f"Trend: {t.name}\nDesc: {t.description}\nData: {data}"
+        )
+
     return "Identified Trends:\n" + "\n\n".join(trend_text)
 
 
+# --8<-- [end:agents]
+
+
+# --8<-- [start:chain]
 async def run_prompt_chain(market_research_text: str) -> MarketingEmail:
     """
     Execute the prompt chain using dependencies to pass state.
@@ -156,8 +170,8 @@ async def run_prompt_chain(market_research_text: str) -> MarketingEmail:
     # Step 1: Summarize
     print("Step 1: Summarizing market research...")
     deps = ChainDeps(raw_text=market_research_text)
-    
-    # We pass a generic instruction; the context is in the system prompt via deps
+
+    # Pass instruction; context is in the system prompt via deps
     summary_result = await summarizer_agent.run(
         "Summarize this report.", deps=deps
     )
@@ -166,8 +180,8 @@ async def run_prompt_chain(market_research_text: str) -> MarketingEmail:
 
     # Step 2: Identify trends
     print("Step 2: Identifying trends...")
-    deps.summary = summary # Update state
-    
+    deps.summary = summary  # Update state
+
     trend_result = await trend_analyzer_agent.run(
         "Identify top 3 trends based on the summary.", deps=deps
     )
@@ -176,14 +190,17 @@ async def run_prompt_chain(market_research_text: str) -> MarketingEmail:
 
     # Step 3: Draft email
     print("Step 3: Drafting marketing email...")
-    deps.trends = trends # Update state
-    
+    deps.trends = trends  # Update state
+
     email_result = await email_drafter_agent.run(
         "Draft an email regarding these trends.", deps=deps
     )
-    
+
     print("Chain complete!")
     return email_result.output
+
+
+# --8<-- [end:chain]
 
 
 if __name__ == "__main__":

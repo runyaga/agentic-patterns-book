@@ -4,51 +4,24 @@ Classify user intent and route queries to specialized handlers.
 
 ## Implementation
 
-Source: `src/agentic_patterns/routing.py`
+Source: [`src/agentic_patterns/routing.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/routing.py)
 
-### Intent & Router
+### Intent & Response Models
 
 ```python
-class Intent(str, Enum):
-    ORDER_STATUS = "order_status"
-    PRODUCT_INFO = "product_info"
-    TECHNICAL_SUPPORT = "technical_support"
-    CLARIFICATION = "clarification"
+--8<-- "src/agentic_patterns/routing.py:models"
+```
 
-class RouteDecision(BaseModel):
-    intent: Intent
-    confidence: float = Field(ge=0.0, le=1.0, description="Confidence score")
-    reasoning: str = Field(description="Why this intent was chosen")
+### Router & Handler Agents
 
-# Router Agent
-router_agent = Agent(
-    model, 
-    output_type=RouteDecision,
-    system_prompt="Classify intent. If confidence < 0.7, use 'clarification'."
-)
+```python
+--8<-- "src/agentic_patterns/routing.py:agents"
 ```
 
 ### Routing Logic
 
 ```python
-INTENT_HANDLERS = {
-    Intent.ORDER_STATUS: order_status_agent,
-    Intent.PRODUCT_INFO: product_info_agent,
-    # ... other handlers
-}
-
-async def route_query(user_query: str) -> tuple[RouteDecision, RouteResponse]:
-    # Step 1: Classify intent
-    route_result = await router_agent.run(
-        f"Classify this query:\n\n{user_query}"
-    )
-    decision = route_result.output
-
-    # Step 2: Route to handler
-    handler = INTENT_HANDLERS[decision.intent]
-    handler_result = await handler.run(user_query)
-
-    return decision, handler_result.output
+--8<-- "src/agentic_patterns/routing.py:routing"
 ```
 
 ## Use Cases

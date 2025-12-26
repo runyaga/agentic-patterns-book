@@ -20,6 +20,7 @@ from pydantic_ai import Agent
 from agentic_patterns._models import get_model
 
 
+# --8<-- [start:models]
 class SectionResult(BaseModel):
     """Result from a single section of parallel work."""
 
@@ -73,6 +74,9 @@ class ReducedSummary(BaseModel):
     total_words: int = Field(description="Total words across all documents")
 
 
+# --8<-- [end:models]
+
+# --8<-- [start:agents]
 # Initialize the model
 model = get_model()
 
@@ -127,8 +131,10 @@ reduce_agent = Agent(
     ),
     output_type=ReducedSummary,
 )
+# --8<-- [end:agents]
 
 
+# --8<-- [start:patterns]
 async def run_sectioning(
     topic: str,
     sections: list[str],
@@ -279,6 +285,8 @@ async def run_map_reduce(
     print("  Reduce complete.")
     return result
 
+
+# --8<-- [end:patterns]
 
 if __name__ == "__main__":
 

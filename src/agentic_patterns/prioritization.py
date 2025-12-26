@@ -79,19 +79,19 @@ class Task(BaseModel):
         default=0.5,
         ge=0.0,
         le=1.0,
-        description="Time sensitivity (0=not urgent, 1=critical)"
+        description="Time sensitivity (0=not urgent, 1=critical)",
     )
     importance: float = Field(
         default=0.5,
         ge=0.0,
         le=1.0,
-        description="Impact on objectives (0=low, 1=critical)"
+        description="Impact on objectives (0=low, 1=critical)",
     )
     effort: float = Field(
         default=0.5,
         ge=0.0,
         le=1.0,
-        description="Resource cost (0=trivial, 1=massive)"
+        description="Resource cost (0=trivial, 1=massive)",
     )
     dependencies: list[str] = Field(default_factory=list)
     deadline: datetime | None = None
@@ -333,8 +333,7 @@ class TaskQueue:
     def get_next(self) -> Task | None:
         """Get the highest priority pending task."""
         pending = [
-            t for t in self.tasks.values()
-            if t.status == TaskStatus.PENDING
+            t for t in self.tasks.values() if t.status == TaskStatus.PENDING
         ]
         if not pending:
             return None
@@ -345,10 +344,7 @@ class TaskQueue:
 
     def get_by_level(self, level: PriorityLevel) -> list[Task]:
         """Get all tasks at a specific priority level."""
-        return [
-            t for t in self.tasks.values()
-            if t.priority_level == level
-        ]
+        return [t for t in self.tasks.values() if t.priority_level == level]
 
     def get_blocked(self) -> list[Task]:
         """Get tasks blocked by unresolved dependencies."""
@@ -358,7 +354,8 @@ class TaskQueue:
                 blocked.append(task)
             elif task.dependencies:
                 unresolved = [
-                    d for d in task.dependencies
+                    d
+                    for d in task.dependencies
                     if d not in self.completed_tasks
                 ]
                 if unresolved:
@@ -382,7 +379,8 @@ class TaskQueue:
                 if task.status == TaskStatus.BLOCKED:
                     # Check if all dependencies now resolved
                     unresolved = [
-                        d for d in task.dependencies
+                        d
+                        for d in task.dependencies
                         if d not in self.completed_tasks
                     ]
                     if not unresolved:
@@ -412,8 +410,7 @@ class TaskQueue:
     def get_ordered_list(self) -> list[Task]:
         """Get all pending tasks in priority order."""
         pending = [
-            t for t in self.tasks.values()
-            if t.status == TaskStatus.PENDING
+            t for t in self.tasks.values() if t.status == TaskStatus.PENDING
         ]
         pending.sort(key=lambda t: t.priority_score, reverse=True)
         return pending
@@ -425,24 +422,28 @@ class TaskQueue:
 
         return QueueStats(
             total_tasks=len(tasks),
-            pending_tasks=len([
-                t for t in tasks if t.status == TaskStatus.PENDING
-            ]),
-            in_progress_tasks=len([
-                t for t in tasks if t.status == TaskStatus.IN_PROGRESS
-            ]),
-            completed_tasks=len([
-                t for t in tasks if t.status == TaskStatus.COMPLETED
-            ]),
-            blocked_tasks=len([
-                t for t in tasks if t.status == TaskStatus.BLOCKED
-            ]),
-            critical_tasks=len([
-                t for t in tasks if t.priority_level == PriorityLevel.CRITICAL
-            ]),
-            high_priority_tasks=len([
-                t for t in tasks if t.priority_level == PriorityLevel.HIGH
-            ]),
+            pending_tasks=len(
+                [t for t in tasks if t.status == TaskStatus.PENDING]
+            ),
+            in_progress_tasks=len(
+                [t for t in tasks if t.status == TaskStatus.IN_PROGRESS]
+            ),
+            completed_tasks=len(
+                [t for t in tasks if t.status == TaskStatus.COMPLETED]
+            ),
+            blocked_tasks=len(
+                [t for t in tasks if t.status == TaskStatus.BLOCKED]
+            ),
+            critical_tasks=len(
+                [
+                    t
+                    for t in tasks
+                    if t.priority_level == PriorityLevel.CRITICAL
+                ]
+            ),
+            high_priority_tasks=len(
+                [t for t in tasks if t.priority_level == PriorityLevel.HIGH]
+            ),
             avg_priority_score=sum(scores) / len(scores) if scores else 0.0,
         )
 
@@ -757,8 +758,7 @@ def get_actionable_tasks(
 
         # Check if blocked by dependencies
         unresolved = [
-            d for d in task.dependencies
-            if d not in queue.completed_tasks
+            d for d in task.dependencies if d not in queue.completed_tasks
         ]
         if unresolved:
             continue
@@ -863,8 +863,10 @@ if __name__ == "__main__":
         print(f"Dependency updates: {len(dep_events)}")
         for event in dep_events:
             task = queue.tasks[event.task_id]
-            print(f"  {task.title}: score {event.old_score:.2f} -> "
-                  f"{event.new_score:.2f}")
+            print(
+                f"  {task.title}: score {event.old_score:.2f} -> "
+                f"{event.new_score:.2f}"
+            )
 
         # 5. Get actionable tasks
         print("\n--- Actionable Tasks ---")
@@ -890,8 +892,10 @@ if __name__ == "__main__":
         ]
         sorted_tasks = batch_prioritize(new_tasks)
         for task, score in sorted_tasks:
-            print(f"{task.title}: {score.priority_level.value} "
-                  f"({score.final_score:.2f})")
+            print(
+                f"{task.title}: {score.priority_level.value} "
+                f"({score.final_score:.2f})"
+            )
 
         print("\n" + "=" * 60)
         print("Demo complete!")

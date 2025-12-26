@@ -17,11 +17,14 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel
 from pydantic import Field
-from pydantic_ai import Agent, ModelRetry, RunContext
+from pydantic_ai import Agent
+from pydantic_ai import ModelRetry
+from pydantic_ai import RunContext
 
 from agentic_patterns._models import get_model
 
 
+# --8<-- [start:models]
 class ProducerOutput(BaseModel):
     """Output from the producer agent."""
 
@@ -36,7 +39,7 @@ class Critique(BaseModel):
         description="Whether the output meets quality standards (8/10+)"
     )
     score: float = Field(ge=0.0, le=10.0, description="Quality score (0-10)")
-    feedback: str = Field(description="Constructive feedback and specific suggestions")
+    feedback: str = Field(description="Constructive feedback and suggestions")
 
 
 @dataclass
@@ -45,8 +48,10 @@ class ReflectionDeps:
 
     critic_agent: Agent[None, Critique]
     max_history: int = 5
+# --8<-- [end:models]
 
 
+# --8<-- [start:agents]
 # Initialize the model
 model = get_model()
 
@@ -58,7 +63,7 @@ critic_agent = Agent(
         "You are a critical reviewer. Evaluate the given content objectively. "
         "Score from 0-10 where 8+ means acceptable quality. "
         "Provide specific, actionable suggestions for improvement. "
-        "If the content is repetitive or fails to address the prompt, score it low."
+        "If content is repetitive or fails to address the prompt, score low."
     ),
     output_type=Critique,
 )
@@ -86,36 +91,39 @@ async def validate_content(
     If quality is low, raise ModelRetry to trigger a new attempt.
     """
     # Ask the critic to evaluate the result
-    print(f"\n[Validator] Critiquing draft...")
+    print("\n[Validator] Critiquing draft...")
     critique_result = await ctx.deps.critic_agent.run(result.content)
     critique = critique_result.output
 
     print(f"  Score: {critique.score}/10")
-    
+
     # Check acceptance criteria
     if critique.score < 8.0 and not critique.is_acceptable:
         print(f"  Feedback: {critique.feedback[:100]}...")
         # Raising ModelRetry automatically feeds the error back to the model
         # The model sees this as a previous tool error/rejection
         raise ModelRetry(
-            f"Critique score {critique.score}/10. Feedback: {critique.feedback}. "
+            f"Critique score {critique.score}/10. "
+            f"Feedback: {critique.feedback}. "
             "Please rewrite the content to address this feedback."
         )
 
     print("  Content accepted!")
     return result
+# --8<-- [end:agents]
 
 
+# --8<-- [start:reflection]
 async def run_reflection(task: str) -> ProducerOutput:
     """
-    Run the reflection process.    
+    Run the reflection process.
     The manual loop is gone. We simply run the producer,
     and PydanticAI handles the critique/retry loop internally.
     """
     print(f"Starting reflection task: {task}")
-    
+
     deps = ReflectionDeps(critic_agent=critic_agent)
-    
+
     try:
         # The agent will automatically retry if the validator raises ModelRetry
         result = await producer_agent.run(task, deps=deps)
@@ -124,6 +132,7 @@ async def run_reflection(task: str) -> ProducerOutput:
         print(f"Reflection failed after retries: {e}")
         # Return what we have, or re-raise
         raise
+# --8<-- [end:reflection]
 
 
 if __name__ == "__main__":

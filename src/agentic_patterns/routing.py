@@ -20,6 +20,7 @@ from pydantic_ai import Agent
 from agentic_patterns._models import get_model
 
 
+# --8<-- [start:models]
 class Intent(str, Enum):
     """Possible intents for routing."""
 
@@ -98,10 +99,14 @@ RouteResponse = (
     | TechnicalSupportResponse
     | ClarificationResponse
 )
+# --8<-- [end:models]
+
 
 # Initialize the model
 model = get_model()
 
+
+# --8<-- [start:agents]
 # Router agent - classifies intent
 router_agent = Agent(
     model,
@@ -176,8 +181,10 @@ INTENT_HANDLERS = {
     Intent.TECHNICAL_SUPPORT: technical_support_agent,
     Intent.CLARIFICATION: clarification_agent,
 }
+# --8<-- [end:agents]
 
 
+# --8<-- [start:routing]
 async def route_query(user_query: str) -> tuple[RouteDecision, RouteResponse]:
     """
     Route a user query to the appropriate handler.
@@ -207,6 +214,9 @@ async def route_query(user_query: str) -> tuple[RouteDecision, RouteResponse]:
 
     print("  Handler complete.")
     return decision, handler_result.output
+
+
+# --8<-- [end:routing]
 
 
 if __name__ == "__main__":

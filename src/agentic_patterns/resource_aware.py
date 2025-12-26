@@ -82,7 +82,8 @@ class ComplexityAssessment(BaseModel):
 
     complexity: TaskComplexity = Field(description="Determined complexity")
     confidence: float = Field(
-        ge=0.0, le=1.0,
+        ge=0.0,
+        le=1.0,
         description="Confidence in assessment",
     )
     reasoning: str = Field(default="", description="Assessment reasoning")
@@ -178,11 +179,14 @@ class ResourceBudget:
         """Get budget usage as percentages."""
         return {
             "tokens": (self.tokens_used / self.max_tokens * 100)
-            if self.max_tokens > 0 else 0,
+            if self.max_tokens > 0
+            else 0,
             "cost": (self.cost_incurred / self.max_cost * 100)
-            if self.max_cost > 0 else 0,
+            if self.max_cost > 0
+            else 0,
             "operations": (self.operations_count / self.max_operations * 100)
-            if self.max_operations > 0 else 0,
+            if self.max_operations > 0
+            else 0,
         }
 
     def reset(self) -> None:
@@ -239,14 +243,30 @@ class ComplexityClassifier:
 
     simple_threshold: int = 50
     medium_threshold: int = 200
-    keywords_complex: list[str] = field(default_factory=lambda: [
-        "analyze", "compare", "evaluate", "synthesize", "design",
-        "explain in detail", "comprehensive", "step by step",
-    ])
-    keywords_simple: list[str] = field(default_factory=lambda: [
-        "what is", "define", "list", "name", "when", "where",
-        "yes or no", "true or false",
-    ])
+    keywords_complex: list[str] = field(
+        default_factory=lambda: [
+            "analyze",
+            "compare",
+            "evaluate",
+            "synthesize",
+            "design",
+            "explain in detail",
+            "comprehensive",
+            "step by step",
+        ]
+    )
+    keywords_simple: list[str] = field(
+        default_factory=lambda: [
+            "what is",
+            "define",
+            "list",
+            "name",
+            "when",
+            "where",
+            "yes or no",
+            "true or false",
+        ]
+    )
 
     def classify(self, task: str) -> ComplexityAssessment:
         """
@@ -553,9 +573,7 @@ class ResourceAwareExecutor:
 
         avg_tokens = 0.0
         if self.budget.operations_count > 0:
-            avg_tokens = (
-                self.budget.tokens_used / self.budget.operations_count
-            )
+            avg_tokens = self.budget.tokens_used / self.budget.operations_count
 
         remaining = self.budget.get_remaining()
 
@@ -593,11 +611,11 @@ def prune_context(
 
     # Simple truncation with indicator
     if len(context) > target_chars:
-        truncated = context[:target_chars - 20]
+        truncated = context[: target_chars - 20]
         # Find a good break point
         last_period = truncated.rfind(".")
         if last_period > target_chars // 2:
-            truncated = truncated[:last_period + 1]
+            truncated = truncated[: last_period + 1]
         return truncated + "\n[...truncated]"
 
     return context

@@ -235,9 +235,7 @@ class AgentMetrics:
         accuracies = [
             m.value for m in self.metrics if m.metric_type == acc_type
         ]
-        tokens = [
-            m.value for m in self.metrics if m.metric_type == tok_type
-        ]
+        tokens = [m.value for m in self.metrics if m.metric_type == tok_type]
         success_count = len(
             [m for m in self.metrics if m.metric_type == suc_type]
         )
@@ -808,9 +806,7 @@ def calculate_precision_recall(
 
     true_positives = len(predicted_set & truth_set)
 
-    precision = (
-        true_positives / len(predicted_set) if predicted_set else 0.0
-    )
+    precision = true_positives / len(predicted_set) if predicted_set else 0.0
     recall = true_positives / len(truth_set) if truth_set else 0.0
 
     if precision + recall > 0:
@@ -966,6 +962,7 @@ if __name__ == "__main__":
         )
 
         import random as rand_mod
+
         for _ in range(10):
             noise_a = 0.1 * (0.5 - rand_mod.random())
             noise_b = 0.1 * (0.5 - rand_mod.random())

@@ -22,6 +22,7 @@ from pydantic_ai import Agent
 from agentic_patterns._models import get_model
 
 
+# --8<-- [start:models]
 class StepStatus(str, Enum):
     """Status of a plan step."""
 
@@ -84,8 +85,10 @@ class PlanExecutionResult(BaseModel):
         default=False,
         description="Whether re-planning occurred",
     )
+# --8<-- [end:models]
 
 
+# --8<-- [start:agents]
 # Initialize the model
 model = get_model()
 
@@ -133,8 +136,10 @@ synthesizer_agent = Agent(
     ),
     output_type=str,
 )
+# --8<-- [end:agents]
 
 
+# --8<-- [start:planning]
 async def create_plan(goal: str, max_steps: int = 5) -> Plan:
     """
     Create a plan to achieve a goal.
@@ -328,6 +333,7 @@ async def plan_and_execute(
     """
     plan = await create_plan(goal, max_steps)
     return await execute_plan(plan, allow_replan)
+# --8<-- [end:planning]
 
 
 if __name__ == "__main__":
