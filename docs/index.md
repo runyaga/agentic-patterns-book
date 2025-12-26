@@ -1,5 +1,7 @@
 # Agentic Patterns Book
 
+**[View on GitHub](https://github.com/runyaga/agentic-patterns-book)**
+
 **Idiomatic pydantic-ai implementations of agentic design patterns.**
 
 This is a **vibe-coded** repository - built using Claude Code with
