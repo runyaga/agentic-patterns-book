@@ -85,6 +85,8 @@ class PlanExecutionResult(BaseModel):
         default=False,
         description="Whether re-planning occurred",
     )
+
+
 # --8<-- [end:models]
 
 
@@ -333,6 +335,8 @@ async def plan_and_execute(
     """
     plan = await create_plan(goal, max_steps)
     return await execute_plan(plan, allow_replan)
+
+
 # --8<-- [end:planning]
 
 

@@ -48,6 +48,8 @@ class ReflectionDeps:
 
     critic_agent: Agent[None, Critique]
     max_history: int = 5
+
+
 # --8<-- [end:models]
 
 
@@ -110,6 +112,8 @@ async def validate_content(
 
     print("  Content accepted!")
     return result
+
+
 # --8<-- [end:agents]
 
 
@@ -132,6 +136,8 @@ async def run_reflection(task: str) -> ProducerOutput:
         print(f"Reflection failed after retries: {e}")
         # Return what we have, or re-raise
         raise
+
+
 # --8<-- [end:reflection]
 
 

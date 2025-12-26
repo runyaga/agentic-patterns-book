@@ -114,6 +114,8 @@ class RetrievalStats(BaseModel):
     total_chunks: int = Field(description="Chunks in store")
     avg_chunk_size: float = Field(description="Average chunk length")
     queries_processed: int = Field(description="Queries handled")
+
+
 # --8<-- [end:models]
 
 
@@ -221,6 +223,8 @@ def chunk_text(
             break
 
     return chunks
+
+
 # --8<-- [end:utils]
 
 
@@ -369,6 +373,8 @@ class VectorStore:
         self.chunks = []
         self.documents = {}
         self.doc_counter = 0
+
+
 # --8<-- [end:store]
 
 
@@ -547,6 +553,8 @@ def build_knowledge_base(
         )
 
     return store
+
+
 # --8<-- [end:rag]
 
 

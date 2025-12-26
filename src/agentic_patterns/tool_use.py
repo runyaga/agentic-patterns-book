@@ -71,6 +71,8 @@ class ToolDependencies:
     # Simulated external data sources
     weather_data: dict[str, dict] | None = None
     search_data: dict[str, list[str]] | None = None
+
+
 # --8<-- [end:models]
 
 
@@ -248,6 +250,8 @@ def get_current_time() -> str:
         Current datetime as a formatted string.
     """
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
 # --8<-- [end:tools]
 
 
@@ -338,6 +342,8 @@ def standalone_calculate(expression: str) -> CalculationResult:
             result=0.0,
             formatted=f"Error: {e}",
         )
+
+
 # --8<-- [end:run]
 
 

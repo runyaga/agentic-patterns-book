@@ -117,6 +117,8 @@ class CollaborationContext:
 
     messages: list[AgentMessage]
     task_results: list[TaskResult]
+
+
 # --8<-- [end:models]
 
 
@@ -514,6 +516,8 @@ async def run_network_collaboration(
         final_output=final_output,
         messages_exchanged=0,
     )
+
+
 # --8<-- [end:collaboration]
 
 
