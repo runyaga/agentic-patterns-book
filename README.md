@@ -90,6 +90,57 @@ uv pip install -e ".[docs]" --python .venv/bin/python
 mkdocs serve
 ```
 
+## Integration Tests
+
+Run all patterns against a live Ollama instance:
+
+```bash
+./scripts/integration_test.sh
+```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OLLAMA_URL` | `http://localhost:11434` | Ollama server URL |
+| `REQUIRED_MODEL` | `gpt-oss:20b` | Model to use |
+| `RETRY_COUNT` | `2` | Retries per pattern |
+| `TIMEOUT_SECS` | `120` | Timeout per pattern |
+| `LOGFIRE_TOKEN` | (unset) | Enable observability |
+
+Example with remote Ollama:
+
+```bash
+OLLAMA_URL=http://remote-host:11434 ./scripts/integration_test.sh
+```
+
+## Observability
+
+This project uses [Logfire](https://logfire.pydantic.dev/) for tracing agent
+runs. When `LOGFIRE_TOKEN` is set, all pydantic-ai calls are instrumented.
+
+### Setup
+
+1. Create a project at [logfire.pydantic.dev](https://logfire.pydantic.dev/)
+2. Get your write token from project settings
+3. Export it:
+
+```bash
+export LOGFIRE_TOKEN=your_token_here
+```
+
+### Logfire MCP Server (Claude Code)
+
+Query your traces directly from Claude Code:
+
+```bash
+# Get a read token from Logfire project settings
+claude mcp add logfire -e LOGFIRE_READ_TOKEN=your_read_token -- uvx logfire-mcp@latest
+```
+
+Then ask Claude Code questions like "show me the last 10 agent runs" or "what
+errors occurred in the last hour".
+
 ## Project Structure
 
 ```

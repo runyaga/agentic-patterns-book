@@ -11,6 +11,7 @@ requires-python = ">=3.14"
 dependencies = [
     "haiku-rag-slim>=0.22.0",
     "pydantic-ai>=0.1.0",
+    "logfire>=3.0",
 ]
 
 [project.optional-dependencies]
