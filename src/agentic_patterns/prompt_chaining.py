@@ -103,8 +103,9 @@ trend_analyzer_agent = Agent(
     model,
     system_prompt=(
         "You are a trend analyst. Given a summary of market research, "
-        "identify the top 3 emerging trends. For each trend, provide "
-        "specific data points from the summary that support it."
+        "identify the top 3 emerging trends. For each trend, provide: "
+        "name (short title), description (1-2 sentences), and "
+        "supporting_data (list of specific data points from the summary)."
     ),
     deps_type=ChainDeps,
     output_type=TrendAnalysis,
