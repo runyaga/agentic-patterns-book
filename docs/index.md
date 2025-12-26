@@ -80,8 +80,8 @@ haiku-rag setup used to create this repository.
 
 This site provides machine-readable documentation for AI assistants:
 
-- [llms.txt](llms.txt) - Concise site index
-- [llms-full.txt](llms-full.txt) - Full content for RAG ingestion
+- [llms.txt](https://runyaga.github.io/agentic-patterns-book/llms.txt) - Concise site index
+- [llms-full.txt](https://runyaga.github.io/agentic-patterns-book/llms-full.txt) - Full content for RAG ingestion
 
 ## License
 
