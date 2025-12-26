@@ -71,7 +71,8 @@ class AgentOutput(BaseModel):
 
     content: str = Field(description="The agent's response content")
     confidence: float = Field(
-        ge=0.0, le=1.0,
+        ge=0.0,
+        le=1.0,
         description="Confidence score (0-1)",
     )
     reasoning: str = Field(
@@ -124,7 +125,8 @@ class DecisionAugmentation(BaseModel):
     analysis: str = Field(description="AI analysis of the situation")
     recommendation: str = Field(description="AI's recommended option")
     confidence: float = Field(
-        ge=0.0, le=1.0,
+        ge=0.0,
+        le=1.0,
         description="Confidence in recommendation",
     )
     risks: list[str] = Field(
@@ -338,15 +340,18 @@ class ApprovalWorkflow:
         auto_approved = total - escalated
 
         approved = sum(
-            1 for r in self.completed_reviews
+            1
+            for r in self.completed_reviews
             if r.decision == ReviewDecision.APPROVE
         )
         rejected = sum(
-            1 for r in self.completed_reviews
+            1
+            for r in self.completed_reviews
             if r.decision == ReviewDecision.REJECT
         )
         modified = sum(
-            1 for r in self.completed_reviews
+            1
+            for r in self.completed_reviews
             if r.decision == ReviewDecision.MODIFY
         )
 
@@ -474,15 +479,20 @@ decision_agent = Agent(
     output_type=DecisionAugmentation,
 )
 
-# Task execution agent
+# Task execution agent - returns AgentOutput with self-assessed confidence
 task_agent = Agent(
     model,
     system_prompt=(
         "You are a helpful assistant. Complete the given task to the best "
-        "of your ability. Be clear about any uncertainties or limitations "
-        "in your response. If you're not confident, say so."
+        "of your ability. Be clear about any uncertainties or limitations. "
+        "Self-assess your confidence (0.0-1.0) based on: "
+        "- How certain you are about the accuracy of your response "
+        "- Whether you have complete information to answer "
+        "- The complexity and ambiguity of the task "
+        "A score of 0.9+ means very confident, 0.7-0.9 means reasonably "
+        "confident, below 0.7 means uncertain."
     ),
-    output_type=str,
+    output_type=AgentOutput,
 )
 
 
@@ -491,7 +501,6 @@ async def execute_with_oversight(
     policy: EscalationPolicy,
     workflow: ApprovalWorkflow,
     task_type: str = "",
-    auto_confidence: float = 0.8,
 ) -> tuple[str, bool, EscalationRequest | None]:
     """
     Execute a task with human oversight based on policy.
@@ -501,22 +510,15 @@ async def execute_with_oversight(
         policy: Escalation policy to apply.
         workflow: Approval workflow to use.
         task_type: Type of task for policy checks.
-        auto_confidence: Default confidence if not evaluated.
 
     Returns:
         Tuple of (result, was_escalated, escalation_request).
     """
     print(f"Executing task: {task[:50]}...")
 
-    # Execute the task
+    # Execute the task - model self-assesses confidence
     result = await task_agent.run(task)
-
-    # Create output with confidence estimate
-    output = AgentOutput(
-        content=result.output,
-        confidence=auto_confidence,
-        reasoning="Task completed based on provided instructions.",
-    )
+    output = result.output  # AgentOutput with self-assessed confidence
 
     # Check escalation policy
     should_escalate, reason = policy.should_escalate(output, task_type)
@@ -623,7 +625,6 @@ if __name__ == "__main__":
             task="Summarize the benefits of exercise",
             policy=policy,
             workflow=workflow,
-            auto_confidence=0.9,
         )
         print(f"Result: {result[:100]}...")
         print(f"Escalated: {escalated}")
@@ -634,7 +635,6 @@ if __name__ == "__main__":
             task="How to delete user personal data from the database",
             policy=policy,
             workflow=workflow,
-            auto_confidence=0.85,
         )
         print(f"Result: {result[:100]}...")
         print(f"Escalated: {escalated}")

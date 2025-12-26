@@ -1,18 +1,20 @@
 """
-Prompt Chaining Pattern Implementation.
+Prompt Chaining Pattern Implementation (Idiomatic PydanticAI).
 
 Based on the Agentic Design Patterns book Chapter 1:
 Chain multiple LLM calls where each step's output becomes the next input.
 
-Example use case: Market research analysis pipeline
-1. Summarize market research findings
-2. Identify trends with supporting data
-3. Draft an email to the marketing team
+Key concepts:
+- Sequential Processing: Each step completes before the next begins
+- Data Flow: Output from step N becomes input for step N+1 via Dependencies
+- Structured Outputs: Pydantic models ensure type-safe data flow
 """
+
+from dataclasses import dataclass
 
 from pydantic import BaseModel
 from pydantic import Field
-from pydantic_ai import Agent
+from pydantic_ai import Agent, RunContext
 
 from agentic_patterns._models import get_model
 
@@ -55,10 +57,22 @@ class MarketingEmail(BaseModel):
     closing: str = Field(description="Email closing")
 
 
+@dataclass
+class ChainDeps:
+    """Dependencies for passing context between chain steps."""
+    
+    # We store all potential inputs here.
+    # In a real app, you might use specific deps for each agent,
+    # but a shared context is common for chains.
+    raw_text: str | None = None
+    summary: ResearchSummary | None = None
+    trends: TrendAnalysis | None = None
+
+
 # Initialize the model
 model = get_model()
 
-# Define agents for each step in the chain
+# --- Agent 1: Summarizer ---
 summarizer_agent = Agent(
     model,
     system_prompt=(
@@ -66,9 +80,19 @@ summarizer_agent = Agent(
         "key findings from market research reports. Focus on extracting "
         "the most important insights, themes, and any quantitative data."
     ),
+    deps_type=ChainDeps,
     output_type=ResearchSummary,
 )
 
+@summarizer_agent.system_prompt
+def inject_raw_text(ctx: RunContext[ChainDeps]) -> str:
+    """Inject the raw text to be summarized."""
+    if not ctx.deps.raw_text:
+        return "No text provided to summarize."
+    return f"Report Text:\n{ctx.deps.raw_text}"
+
+
+# --- Agent 2: Trend Analyzer ---
 trend_analyzer_agent = Agent(
     model,
     system_prompt=(
@@ -76,9 +100,29 @@ trend_analyzer_agent = Agent(
         "identify the top 3 emerging trends. For each trend, provide "
         "specific data points from the summary that support it."
     ),
+    deps_type=ChainDeps,
     output_type=TrendAnalysis,
 )
 
+@trend_analyzer_agent.system_prompt
+def inject_summary(ctx: RunContext[ChainDeps]) -> str:
+    """Inject the summary for trend analysis."""
+    if not ctx.deps.summary:
+        return "No summary provided."
+    
+    s = ctx.deps.summary
+    findings = "\n".join(f"- {f}" for f in s.key_findings)
+    themes = "\n".join(f"- {t}" for t in s.main_themes)
+    
+    return (
+        f"Research Summary:\n"
+        f"Key Findings:\n{findings}\n"
+        f"Main Themes:\n{themes}\n"
+        f"Market Size: {s.market_size or 'N/A'}"
+    )
+
+
+# --- Agent 3: Email Drafter ---
 email_drafter_agent = Agent(
     model,
     system_prompt=(
@@ -87,60 +131,57 @@ email_drafter_agent = Agent(
         "The email should be professional, actionable, and highlight "
         "the most important insights."
     ),
+    deps_type=ChainDeps,
     output_type=MarketingEmail,
 )
+
+@email_drafter_agent.system_prompt
+def inject_trends(ctx: RunContext[ChainDeps]) -> str:
+    """Inject trends for email drafting."""
+    if not ctx.deps.trends:
+        return "No trends provided."
+    
+    trend_text = []
+    for t in ctx.deps.trends.trends:
+        data = ", ".join(t.supporting_data)
+        trend_text.append(f"Trend: {t.name}\nDesc: {t.description}\nData: {data}")
+    
+    return "Identified Trends:\n" + "\n\n".join(trend_text)
 
 
 async def run_prompt_chain(market_research_text: str) -> MarketingEmail:
     """
-    Execute the prompt chain.
-
-    Args:
-        market_research_text: Raw market research report text.
-
-    Returns:
-        MarketingEmail with the final drafted email.
-
-    Steps:
-        1. Summarize the research
-        2. Analyze trends from the summary
-        3. Draft an email based on the trends
+    Execute the prompt chain using dependencies to pass state.
     """
     # Step 1: Summarize
     print("Step 1: Summarizing market research...")
+    deps = ChainDeps(raw_text=market_research_text)
+    
+    # We pass a generic instruction; the context is in the system prompt via deps
     summary_result = await summarizer_agent.run(
-        f"Summarize the following market research report:\n\n"
-        f"{market_research_text}"
+        "Summarize this report.", deps=deps
     )
     summary = summary_result.output
     print(f"  Found {len(summary.key_findings)} key findings")
 
-    # Step 2: Identify trends (using summary as input)
+    # Step 2: Identify trends
     print("Step 2: Identifying trends...")
-    findings = "\n".join(f"- {f}" for f in summary.key_findings)
-    themes = "\n".join(f"- {t}" for t in summary.main_themes)
+    deps.summary = summary # Update state
+    
     trend_result = await trend_analyzer_agent.run(
-        f"Based on this research summary, identify the top 3 trends:\n\n"
-        f"Key Findings:\n{findings}\n\n"
-        f"Main Themes:\n{themes}\n\n"
-        f"Market Size: {summary.market_size or 'Not specified'}"
+        "Identify top 3 trends based on the summary.", deps=deps
     )
     trends = trend_result.output
     print(f"  Identified {len(trends.trends)} trends")
 
-    # Step 3: Draft email (using trends as input)
+    # Step 3: Draft email
     print("Step 3: Drafting marketing email...")
-    trend_details = "\n".join(
-        f"Trend: {t.name}\n"
-        f"Description: {t.description}\n"
-        f"Supporting Data:\n"
-        + "\n".join(f"  - {d}" for d in t.supporting_data)
-        for t in trends.trends
-    )
+    deps.trends = trends # Update state
+    
     email_result = await email_drafter_agent.run(
-        f"Draft an email about these market trends:\n\n{trend_details}"
+        "Draft an email regarding these trends.", deps=deps
     )
-
+    
     print("Chain complete!")
     return email_result.output
 

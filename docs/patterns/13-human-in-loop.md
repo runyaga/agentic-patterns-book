@@ -27,20 +27,38 @@ class EscalationPolicy:
         return False, None
 ```
 
+### Idiomatic Pattern (Self-Assessed Confidence)
+
+The agent returns `AgentOutput` directly with self-assessed confidence, rather
+than having the wrapper assign a fake confidence score.
+
+```python
+# Agent returns structured output with confidence
+task_agent = Agent(
+    model,
+    system_prompt=(
+        "Complete the task. Self-assess your confidence (0.0-1.0) based on: "
+        "- Certainty about accuracy of response "
+        "- Whether you have complete information "
+        "- Complexity and ambiguity of the task"
+    ),
+    output_type=AgentOutput,  # Model returns confidence directly
+)
+```
+
 ### Execution with Oversight
 
 ```python
 async def execute_with_oversight(task: str, policy: EscalationPolicy):
-    # 1. Run Agent
+    # 1. Run Agent - model self-assesses confidence
     result = await task_agent.run(task)
-    output = AgentOutput(content=result.output, confidence=...)
+    output = result.output  # AgentOutput with confidence
 
     # 2. Check Policy
     should_escalate, reason = policy.should_escalate(output)
 
     # 3. Escalate or Approve
     if should_escalate:
-        # Halt and request review
         return EscalationRequest(reason=reason, output=output)
     else:
         return output.content

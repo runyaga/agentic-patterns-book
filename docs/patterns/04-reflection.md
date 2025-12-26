@@ -1,68 +1,71 @@
 # Chapter 4: Reflection
 
-Self-correction via iterative evaluation (Producer -> Critic -> Refiner).
+Self-correction via automated validation loops.
 
 ## Implementation
 
 Source: `src/agentic_patterns/reflection.py`
 
-### Models & Agents
+### Idiomatic Pattern (ModelRetry)
+
+Instead of a manual `while` loop, we use PydanticAI's `output_validator` (or `result_validator` in older versions) to critique the output. If the quality is insufficient, we raise `ModelRetry`, which automatically feeds the error back to the model for a new attempt.
 
 ```python
-class Critique(BaseModel):
-    is_acceptable: bool = Field(description="Meets quality standards")
-    score: float = Field(ge=0.0, le=10.0, description="Quality score (0-10)")
-    strengths: list[str]
-    weaknesses: list[str]
-    suggestions: list[str]
+# 1. Define Dependencies
+@dataclass
+class ReflectionDeps:
+    critic_agent: Agent
 
-# Producer: Generates initial content
-producer_agent = Agent(model, output_type=ProducerOutput, system_prompt="...")
+# 2. Define Producer with Retry Policy
+producer_agent = Agent(
+    model,
+    deps_type=ReflectionDeps,
+    output_type=ProducerOutput,
+    retries=3  # Allow 3 attempts
+)
 
-# Critic: Evaluates content against criteria
-critic_agent = Agent(model, output_type=Critique, system_prompt="Score 0-10...")
-
-# Refiner: Improves content based on critique
-refiner_agent = Agent(model, output_type=RefinedOutput, system_prompt="...")
+# 3. Define the Validator Hook
+@producer_agent.output_validator
+async def validate_quality(ctx: RunContext[ReflectionDeps], result: ProducerOutput) -> ProducerOutput:
+    # Call the critic agent
+    critique = await ctx.deps.critic_agent.run(result.content)
+    
+    # Check thresholds
+    if critique.score < 8.0:
+        # PydanticAI Magic: This raises an error that the model sees, 
+        # prompting it to fix the specific issues mentioned.
+        raise ModelRetry(
+            f"Score {critique.score}/10. Feedback: {critique.feedback}"
+        )
+        
+    return result
 ```
 
-### Reflection Loop
+### Execution
+
+The caller code is incredibly simple because the loop is internal.
 
 ```python
-async def run_reflection(task: str, max_iters: int = 3) -> ReflectionResult:
-    # 1. Initial Production
-    initial = await producer_agent.run(task)
-    content = initial.output.content
-
-    for i in range(max_iters):
-        # 2. Critique
-        critique = (await critic_agent.run(content)).output
-
-        # 3. Check Convergence
-        if critique.is_acceptable or critique.score >= 8.0:
-            return ReflectionResult(content=content, converged=True, ...)
-
-        # 4. Refine
-        refined = await refiner_agent.run(
-            f"Content: {content}\nCritique: {critique.suggestions}"
-        )
-        content = refined.output.content
-
-    return ReflectionResult(content=content, converged=False, ...)
+async def run_reflection(task: str):
+    # Dependencies needed for the validation hook
+    deps = ReflectionDeps(critic_agent=critic_agent)
+    
+    # Run - this single call handles the generate -> critique -> retry loop
+    result = await producer_agent.run(task, deps=deps)
+    return result.output
 ```
 
 ## Use Cases
 
-- **Code Generation**: Generate -> Test/Lint -> Fix Errors.
-- **Content Writing**: Draft -> Review (Tone/Clarity) -> Revise.
-- **Data Extraction**: Extract -> Verify Schema -> Re-extract if invalid.
-- **Translation**: Translate -> Check Nuance -> Adjust.
+- **Code Generation**: Validator runs unit tests; retries on failure.
+- **Content Writing**: Validator checks style guidelines; retries on violations.
+- **Data Extraction**: Validator checks schema constraints; retries on mismatches.
 
 ## When to Use
 
-- Quality > Latency (loops take time).
-- Success criteria are objectively measurable or distinctly critique-able.
-- First-pass results are often imperfect but improvable.
+- You have a clear "pass/fail" or scoring criteria.
+- You want to keep your main application logic linear (`result = run()`) rather than looping.
+- You want the model to see *why* it failed (the `ModelRetry` message becomes conversation history).
 
 ## Example
 

@@ -33,6 +33,7 @@ from datetime import datetime
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic_ai import Agent
+from pydantic_ai import RunContext
 
 from agentic_patterns._models import get_model
 
@@ -89,7 +90,8 @@ class RAGResponse(BaseModel):
         description="Chunks used for context",
     )
     confidence: float = Field(
-        ge=0.0, le=1.0,
+        ge=0.0,
+        le=1.0,
         description="Confidence in answer",
     )
 
@@ -328,11 +330,13 @@ class VectorStore:
         # Return top k
         results = []
         for rank, (chunk, score) in enumerate(scored_chunks[:k], 1):
-            results.append(RetrievedChunk(
-                chunk=chunk,
-                score=score,
-                rank=rank,
-            ))
+            results.append(
+                RetrievedChunk(
+                    chunk=chunk,
+                    score=score,
+                    rank=rank,
+                )
+            )
 
         return results
 
@@ -365,29 +369,64 @@ class VectorStore:
 # Initialize model
 model = get_model()
 
-# RAG generation agent
-rag_agent = Agent(
+
+@dataclass
+class RAGDeps:
+    """Dependencies for RAG agent with dynamic search."""
+
+    store: VectorStore
+    top_k: int = 3
+    min_score: float = 0.1
+
+
+# RAG generation agent with tool-based retrieval
+rag_agent: Agent[RAGDeps, str] = Agent(
     model,
     system_prompt=(
-        "You are a helpful assistant that answers questions based on "
-        "provided context. Use ONLY the information from the context to "
-        "answer. If the context doesn't contain enough information, "
-        "say so clearly. Always cite which parts of the context support "
-        "your answer."
+        "You are a helpful assistant that answers questions using a "
+        "knowledge base. Use the search_knowledge tool to find relevant "
+        "information before answering. If the search doesn't return "
+        "useful results, say so clearly. Always cite which parts of "
+        "the retrieved context support your answer."
     ),
+    deps_type=RAGDeps,
     output_type=str,
 )
 
-# Query understanding agent
-query_agent = Agent(
-    model,
-    system_prompt=(
-        "You are a query analyzer. Given a user question, identify the "
-        "key concepts and rephrase it if needed for better retrieval. "
-        "Output a clear, focused search query."
-    ),
-    output_type=str,
-)
+
+@rag_agent.tool
+async def search_knowledge(
+    ctx: RunContext[RAGDeps],
+    query: str,
+) -> str:
+    """
+    Search the knowledge base for information relevant to the query.
+
+    Args:
+        ctx: Run context with RAG dependencies.
+        query: The search query to find relevant information.
+
+    Returns:
+        Formatted context from retrieved chunks, or message if none found.
+    """
+    retrieved = ctx.deps.store.search(
+        query=query,
+        k=ctx.deps.top_k,
+        threshold=ctx.deps.min_score,
+    )
+
+    if not retrieved:
+        return "No relevant information found in the knowledge base."
+
+    # Format retrieved chunks as context
+    context_parts = []
+    for rc in retrieved:
+        source_info = ""
+        if rc.chunk.metadata.get("title"):
+            source_info = f" (from: {rc.chunk.metadata['title']})"
+        context_parts.append(f"[{rc.rank}]{source_info}: {rc.chunk.content}")
+
+    return "\n\n".join(context_parts)
 
 
 @dataclass
@@ -395,77 +434,47 @@ class RAGPipeline:
     """
     Complete RAG pipeline for retrieval-augmented generation.
 
-    Combines document retrieval with LLM generation.
+    Uses tool-based retrieval where the agent decides when to search.
     """
 
     store: VectorStore
     top_k: int = 3
     min_score: float = 0.1
-    include_sources: bool = True
-
-    def _format_context(
-        self,
-        chunks: list[RetrievedChunk],
-    ) -> str:
-        """Format retrieved chunks as context."""
-        if not chunks:
-            return "No relevant context found."
-
-        context_parts = []
-        for rc in chunks:
-            source_info = ""
-            if rc.chunk.metadata.get("title"):
-                source_info = f" (from: {rc.chunk.metadata['title']})"
-
-            context_parts.append(
-                f"[{rc.rank}]{source_info}: {rc.chunk.content}"
-            )
-
-        return "\n\n".join(context_parts)
 
     async def query(
         self,
         question: str,
-        expand_query: bool = False,
     ) -> RAGResponse:
         """
         Process a question through the RAG pipeline.
 
+        The agent uses the search_knowledge tool to dynamically
+        retrieve relevant context before answering.
+
         Args:
             question: User's question.
-            expand_query: Whether to expand/rephrase the query.
 
         Returns:
             RAGResponse with answer and sources.
         """
-        search_query = question
+        # Create deps with store configuration
+        deps = RAGDeps(
+            store=self.store,
+            top_k=self.top_k,
+            min_score=self.min_score,
+        )
 
-        # Optionally expand the query
-        if expand_query:
-            result = await query_agent.run(
-                f"Rephrase this question for better search: {question}"
-            )
-            search_query = result.output
+        # Run agent - it will use search_knowledge tool as needed
+        result = await rag_agent.run(question, deps=deps)
+        answer = result.output
 
-        # Retrieve relevant chunks
+        # Get chunks that were retrieved during the query
+        # (store tracks queries, we get the most recent search results)
         retrieved = self.store.search(
-            query=search_query,
+            query=question,
             k=self.top_k,
             threshold=self.min_score,
         )
-
-        # Format context
-        context = self._format_context(retrieved)
-
-        # Generate answer
-        prompt = (
-            f"Context:\n{context}\n\n"
-            f"Question: {question}\n\n"
-            f"Answer based on the context above:"
-        )
-
-        result = await rag_agent.run(prompt)
-        answer = result.output
 
         # Calculate confidence based on retrieval scores
         confidence = 0.5
