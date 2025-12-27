@@ -10,7 +10,7 @@
 **Idiomatic pydantic-ai implementations of agentic design patterns.**
 
 > **Vibe Coded** - This repository was built using Claude Code with
-> [haiku-rag](https://github.com/anthropics/haiku-rag) as the RAG mechanism
+> [haiku-rag](https://github.com/ggozad/haiku.rag) as the RAG mechanism
 > for reading the source material. See [Reproduce This](https://runyaga.github.io/agentic-patterns-book/reproduce/)
 > for the complete workflow.
 
