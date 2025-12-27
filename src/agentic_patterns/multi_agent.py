@@ -17,6 +17,7 @@ delegates tasks to specialized worker agents.
 Flow diagram:
 
 ```mermaid
+--8<-- [start:diagram]
 stateDiagram-v2
     [*] --> PlanNode: Start collaboration
 
@@ -27,6 +28,7 @@ stateDiagram-v2
     ExecuteTaskNode --> SynthesizeNode: all tasks complete
 
     SynthesizeNode --> [*]: End with result
+--8<-- [end:diagram]
 ```
 
 Example usage:

@@ -2,6 +2,18 @@
 
 Coordinate specialized agents (Supervisor, Researcher, Writer) to achieve complex goals.
 
+## Flow Diagram
+
+```mermaid
+stateDiagram-v2
+    [*] --> PlanNode: Start collaboration
+    PlanNode --> ExecuteTaskNode: tasks created
+    PlanNode --> [*]: no tasks (empty plan)
+    ExecuteTaskNode --> ExecuteTaskNode: more pending tasks
+    ExecuteTaskNode --> SynthesizeNode: all tasks complete
+    SynthesizeNode --> [*]: End with result
+```
+
 ## Implementation
 
 Source: [`src/agentic_patterns/multi_agent.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/multi_agent.py)

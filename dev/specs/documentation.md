@@ -32,6 +32,12 @@ Development best practices. Updated when:
 - Common pitfalls are encountered
 - Useful techniques emerge during implementation
 
+### docs/idioms.md
+
+Framework idioms for pydantic-ai, pydantic_graph, and pydantic-evals.
+Reference this when implementing patterns to ensure idiomatic code.
+Updated when new framework patterns are discovered.
+
 ### dev/specs/pattern-implementation.md
 
 Implementation workflow and status tracking. Contains:
@@ -217,3 +223,71 @@ be completed before marking a pattern as DONE.
 
 See Phase 6 in pattern-implementation.md for the complete documentation
 workflow.
+
+---
+
+## MkDocs Configuration
+
+### Mermaid Diagrams
+
+Add flow diagrams to pattern docs using mermaid fenced code blocks:
+
+```markdown
+## Flow Diagram
+
+` ` `mermaid
+flowchart LR
+    A[Input] --> B[Process]
+    B --> C[Output]
+` ` `
+```
+
+Setup in `mkdocs.yml`:
+
+```yaml
+markdown_extensions:
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+extra_javascript:
+  - https://unpkg.com/mermaid@10/dist/mermaid.min.js
+  - js/mermaid-init.js
+```
+
+The `docs/js/mermaid-init.js` handles initialization:
+
+```javascript
+document.addEventListener('DOMContentLoaded', function() {
+    mermaid.initialize({ startOnLoad: true, theme: 'default' });
+});
+```
+
+### Code Snippets from Source
+
+Use pymdownx.snippets to include code directly from Python files (DRY):
+
+In your Python file, add snippet markers:
+
+```python
+# --8<-- [start:models]
+class MyModel(BaseModel):
+    field: str
+# --8<-- [end:models]
+```
+
+In your markdown docs:
+
+```markdown
+` ` `python
+--8<-- "src/agentic_patterns/routing.py:models"
+` ` `
+```
+
+This keeps docs in sync with source code automatically.
+
+**Note**: Snippets inside mermaid fences don't work well due to how
+pymdownx.superfences wraps content. Put mermaid diagrams inline in docs,
+matching the diagram in the Python module docstring.

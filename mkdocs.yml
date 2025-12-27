@@ -34,16 +34,28 @@ markdown_extensions:
   - pymdownx.snippets:
       base_path: ["."]
       check_paths: true
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - admonition
   - pymdownx.details
   - tables
   - attr_list
   - md_in_html
 
+extra_javascript:
+  - https://unpkg.com/mermaid@10/dist/mermaid.min.js
+  - js/mermaid-init.js
+
+extra_css:
+  - css/mermaid.css
+
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
+  - Idioms: idioms.md
   - Patterns:
       - Overview: patterns/index.md
       - Prompt Chaining: patterns/01-prompt-chaining.md
@@ -58,4 +70,3 @@ nav:
       - Human-in-Loop: patterns/13-human-in-loop.md
       - Knowledge Retrieval: patterns/14-knowledge-retrieval.md
   - Reproduce This: reproduce.md
-  - Attribution: attribution.md

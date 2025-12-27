@@ -9,6 +9,19 @@ Example use case: Customer service routing
 - Product information queries -> product_info handler
 - Technical support queries -> technical_support handler
 - Unclear queries -> clarification handler
+
+Flow diagram:
+
+```mermaid
+--8<-- [start:diagram]
+flowchart LR
+    Q[User Query] --> R[Router Agent]
+    R --> |order_status| O[Order Handler]
+    R --> |product_info| P[Product Handler]
+    R --> |technical_support| T[Support Handler]
+    R --> |clarification| C[Clarification Handler]
+--8<-- [end:diagram]
+```
 """
 
 from enum import Enum
