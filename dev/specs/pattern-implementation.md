@@ -218,6 +218,12 @@ If the answer is "no" to all, the pattern may already be idiomatic.
 | 18 | Guardrails | DONE | ✅ Already idiomatic |
 | 19 | Evaluation | DONE | ✅ Already idiomatic |
 | 20 | Prioritization | DONE | ✅ Already idiomatic |
+| 10 | Universal Connector (MCP) | pending | TBD |
+| 11 | Teleological Engine (Goal Setting) | pending | TBD |
+| 12 | Phoenix Protocol (Exception Handling) | pending | TBD |
+| 15 | Agora (Inter-Agent Comm) | pending | TBD |
+| 17 | Cognitive Weaver (Reasoning) | pending | TBD |
+| 21 | Cartographer (Exploration) | pending | TBD |
 
 ### 4.2 Pattern Assessments
 
