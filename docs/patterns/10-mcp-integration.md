@@ -6,6 +6,23 @@ The **MCP Integration** pattern demonstrates how to use the Model Context Protoc
 
 ## Key Concepts
 
+```mermaid
+sequenceDiagram
+    participant Agent
+    participant Calc as Calculator Server
+    participant FS as Filesystem Server
+
+    Note over Agent: Toolsets=[Calc, FS]
+    Agent->>Calc: list_tools()
+    Agent->>FS: list_tools()
+    Calc-->>Agent: [calc_add, calc_sub]
+    FS-->>Agent: [fs_read, fs_list]
+
+    Agent->>Agent: LLM chooses 'calc_add'
+    Agent->>Calc: call_tool('calc_add', args, meta={user_id: 123})
+    Calc-->>Agent: Result: 42
+```
+
 -   **Native Support**: `pydantic-ai` has first-class support for MCP via the `toolsets` parameter. No custom connector code is required.
 -   **Multi-Server Orchestration**: Agents can connect to multiple servers simultaneously (e.g., a Calculator server AND a Filesystem server).
 -   **Tool Prefixes**: To avoid naming conflicts (e.g., two servers both having a `search` tool), tools can be namespaced (e.g., `calc_add`, `fs_read`).

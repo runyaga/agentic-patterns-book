@@ -28,20 +28,7 @@ stateDiagram-v2
 A measurable target with an async evaluator:
 
 ```python
-from agentic_patterns.goal_monitoring import Goal
-
-async def get_disk_usage() -> float:
-    import shutil
-    usage = shutil.disk_usage("/")
-    return (usage.used / usage.total) * 100
-
-goal = Goal(
-    name="disk_space",
-    target=80.0,
-    comparator="<=",  # Current should be <= target
-    evaluator=get_disk_usage,
-    remediation_hint="Clean up temp files and old logs",
-)
+--8<-- "src/agentic_patterns/goal_monitoring.py:models"
 ```
 
 ### GoalMonitor
@@ -49,56 +36,13 @@ goal = Goal(
 Manages the monitoring lifecycle:
 
 ```python
-from agentic_patterns.goal_monitoring import GoalMonitor
-
-monitor = GoalMonitor(
-    goals=[goal],
-    check_interval=300.0,  # Check every 5 minutes
-)
-
-await monitor.start()
-# ... later
-await monitor.stop()
+--8<-- "src/agentic_patterns/goal_monitoring.py:monitor"
 ```
 
 ## Usage Example
 
 ```python
-import asyncio
-from agentic_patterns.goal_monitoring import Goal, GoalMonitor
-
-# Define evaluator functions
-async def get_memory_usage() -> float:
-    import psutil
-    return psutil.virtual_memory().percent
-
-# Define goals
-goals = [
-    Goal(
-        name="memory",
-        target=90.0,
-        comparator="<=",
-        evaluator=get_memory_usage,
-        remediation_hint="Restart memory-heavy services",
-    ),
-]
-
-async def main():
-    monitor = GoalMonitor(goals, check_interval=60.0)
-    await monitor.start()
-
-    # Run for 10 minutes
-    await asyncio.sleep(600)
-
-    # Check final status
-    for status in monitor.get_status():
-        print(f"{status.goal_name}: {status.current_value:.1f} "
-              f"({'met' if status.is_met else 'NOT MET'})")
-
-    await monitor.stop()
-
-if __name__ == "__main__":
-    asyncio.run(main())
+--8<-- "src/agentic_patterns/goal_monitoring.py:main"
 ```
 
 ## Comparators
@@ -119,27 +63,19 @@ if __name__ == "__main__":
 3. **RemediateNode**: Calls the remediation agent with the goal's hint,
    escalates on failure, then returns to CheckNode to re-verify
 
-## When to Use This (vs Cron)
+## When to Use (vs Cron)
 
-This pattern is similar to a cron job with health checks. Be skeptical.
+This pattern is similar to a cron job with health checks. Use this table to decide:
 
-**Use cron/systemd timers when:**
-- Thresholds are static and well-defined
-- Remediation is a fixed script (restart service, clean disk)
-- You have existing monitoring (Prometheus, Nagios, Datadog)
-- Reliability matters more than flexibility
-- Cost matters (LLM calls are expensive)
+| Scenario | Use Cron / Systemd | Use Goal Monitor |
+| :--- | :--- | :--- |
+| **Logic** | Static thresholds (Disk > 90%) | Dynamic/Contextual reasoning |
+| **Action** | Fixed scripts (`systemctl restart`) | Agentic remediation (read logs, plan fix) |
+| **Trigger** | Time-based only | State-based (can run continuously) |
+| **Cost** | Free (shell scripts) | Non-zero (LLM calls for remediation) |
+| **Complexity** | Low | Medium (requires async loop) |
 
-**Consider this pattern when:**
-- Remediation requires reasoning about context
-- Goals change dynamically at runtime
-- It's part of a larger agentic workflow
-- You need the agent to explain its remediation decisions
-
-**Honest assessment:** For 90% of monitoring use cases, cron + shell scripts +
-existing alerting (PagerDuty, Slack) is simpler, cheaper, and more reliable.
-This pattern is most useful when embedded in an agentic system that already
-uses LLMs, not as a standalone monitoring solution.
+**Verdict:** For 90% of infrastructure monitoring, use existing tools (Prometheus, Datadog). Use this pattern when the remediation requires *intelligence* (e.g., "Fix the typo in the README" or "Refactor this function if it gets too complex").
 
 ## Production TODOs
 
