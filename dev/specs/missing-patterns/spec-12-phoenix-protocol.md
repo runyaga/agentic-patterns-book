@@ -387,7 +387,36 @@ Documented edge cases we're skipping:
 - [x] Exported from `src/agentic_patterns/__init__.py`
 - [x] `if __name__ == "__main__"` demo block
 
-**Documentation:**
-- **Pattern page:** `docs/patterns/12-exception-recovery.md`
-- **Key insight:** Deterministic heuristics handle 90% of cases without LLM
-- **When to use:** Wrap unreliable agent calls (external APIs, long prompts)
+## 7. Review & Refinement Areas
+
+### 9.1 History Summarization
+**Concern:** Flattening message history into a text summary and injecting it as a system prompt destroys the structured conversation (User/Model/Tool parts).
+**Refinement:** The summarizer should ideally return a list of `ModelMessage` objects or a `ModelRequest` with a summary text part, preserving the initial system prompt and the most recent messages to maintain context continuity.
+
+### 9.2 Capturing In-Flight Tool Calls
+**Concern:** When `agent.run()` aborts due to an unhandled exception, access to the partial message history (specifically the tool call that caused the crash) might be lost if not manually managed.
+**Refinement:** Investigate if the exception object contains context or if we can rely on `pydantic-ai`'s internal state. If not, the initial implementation may have to rely on input/error pairs, potentially missing the specific tool arguments that failed.
+
+### 9.3 Stack Trace Token Consumption
+**Concern:** Full Python stack traces can be very long (1-2k tokens), potentially exhausting the context window for the Clinic Agent.
+**Refinement:** Implement "smart truncation" for the stack trace in `TraumaContext`, capturing only the last ~3 frames or filtering for relevant application code to save tokens.
+
+## 10. V1 Implementation Notes & V2 Roadmap
+
+### 10.1 V1 Scope: "Smart Retry"
+The initial implementation focuses on a lightweight, library-first **Smart Retry** mechanism rather than the full "Clinic" architecture.
+*   **Deterministic Heuristics:** Fast-path matching for known errors (Timeout, Rate Limit, Context Length) using pure Python logic.
+*   **Lightweight Clinic:** The LLM is only invoked for `UNKNOWN` errors to decide if a retry is worth it.
+*   **Token Efficiency:** We explicitly avoid sending full stack traces or history in V1 to keep overhead near zero.
+
+### 10.2 V2 Features (Idiomatic Refinement)
+These features are critical for ensuring the pattern is fully idiomatic and type-safe:
+1.  **Action Type Safety:** Refactor `RecoveryAction.action` from `str` to `Literal[...]` to enforce compile-time checking of recovery strategies.
+2.  **Conversation Continuity:** Update `recoverable_run` to accept and propagate `message_history`. This ensures the model retains memory during recovery attempts, which is essential for multi-turn agents.
+3.  **Smart Truncation:** Replace the hard 500-char limit with logic that preserves the *end* of the error message (where the meaningful traceback usually lives) and any JSON structures.
+
+### 10.3 V3 Features (Deferred)
+The following capabilities are deferred to V3:
+1.  **History Summarization:** V1 truncates prompts but does not summarize conversation history. V3 will integrate a `SummarizerAgent`.
+2.  **Tool Argument Patching:** V1 retries tool errors but does not attempt to "fix" the arguments. V3 will require `ToolCallSnapshot` analysis.
+3.  **Full TraumaContext:** V1 uses a simple `ErrorCategory` enum. V3 will implement the full `TraumaContext` model for deep diagnosis.
