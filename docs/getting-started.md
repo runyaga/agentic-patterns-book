@@ -108,6 +108,23 @@ uv run pytest
 
 Tests require 80% branch coverage to pass.
 
+### Integration tests
+
+Run patterns against a live Ollama instance:
+
+```bash
+# Run all patterns
+./scripts/integration_test.sh
+
+# Run single pattern
+./scripts/integration_test.sh routing
+
+# Verbose output
+./scripts/integration_test.sh multi_agent -v
+```
+
+Requires `OLLAMA_URL` and optionally `LOGFIRE_TOKEN` for observability.
+
 ### Lint and format
 
 ```bash

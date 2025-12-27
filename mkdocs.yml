@@ -55,9 +55,9 @@ extra_css:
 nav:
   - Home: index.md
   - Getting Started: getting-started.md
-  - Idioms: idioms.md
   - Patterns:
       - Overview: patterns/index.md
+      - Idioms: idioms.md
       - Prompt Chaining: patterns/01-prompt-chaining.md
       - Routing: patterns/02-routing.md
       - Parallelization: patterns/03-parallelization.md

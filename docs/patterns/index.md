@@ -3,6 +3,8 @@
 Documentation for each implemented pattern from the "Agentic Design Patterns"
 book, ported to pydantic-ai.
 
+See [Idioms](../idioms.md) for pydantic-ai, pydantic_graph, and pydantic-evals patterns.
+
 ## Pattern Index
 
 | Chapter | Pattern | Description |
