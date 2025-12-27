@@ -424,10 +424,10 @@ Documented decisions on what we're skipping:
 
 ## 8. Integration & Documentation
 
-**Integration (TODO):**
-- [ ] Added to `scripts/integration_test.sh` ALL_PATTERNS array
-- [ ] Exported from `src/agentic_patterns/__init__.py`
-- [ ] `if __name__ == "__main__"` demo block
+**Integration:**
+- [x] Added to `scripts/integration_test.sh` ALL_PATTERNS array
+- [x] Exported from `src/agentic_patterns/__init__.py`
+- [x] `if __name__ == "__main__"` demo block
 
 **Documentation:**
 - **Pattern page:** `docs/patterns/10-mcp-integration.md`
