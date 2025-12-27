@@ -14,19 +14,43 @@ Key concepts:
 This module implements the Supervisor pattern where a coordinator
 delegates tasks to specialized worker agents.
 
+Flow diagram:
+
+```mermaid
+--8<-- [start:diagram]
+stateDiagram-v2
+    [*] --> PlanNode: Start collaboration
+
+    PlanNode --> ExecuteTaskNode: tasks created
+    PlanNode --> [*]: no tasks (empty plan)
+
+    ExecuteTaskNode --> ExecuteTaskNode: more pending tasks
+    ExecuteTaskNode --> SynthesizeNode: all tasks complete
+
+    SynthesizeNode --> [*]: End with result
+--8<-- [end:diagram]
+```
+
 Example usage:
     result = await run_collaborative_task(
         "Research and summarize Python async patterns"
     )
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass
+from dataclasses import field
 from enum import Enum
 
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic_ai import Agent
 from pydantic_ai import RunContext
+from pydantic_graph import BaseNode
+from pydantic_graph import End
+from pydantic_graph import Graph
+from pydantic_graph import GraphRunContext
 
 from agentic_patterns._models import get_model
 
@@ -115,10 +139,40 @@ class CollaborationResult(BaseModel):
 
 @dataclass
 class CollaborationContext:
-    """Runtime context for collaboration."""
+    """Runtime context for collaboration (used as agent deps)."""
 
     messages: list[AgentMessage]
     task_results: list[TaskResult]
+
+
+@dataclass
+class CollaborationState:
+    """Graph state for multi-agent collaboration."""
+
+    objective: str
+    max_tasks: int = 4
+    plan: SupervisorPlan | None = None
+    pending_tasks: list[DelegatedTask] = field(default_factory=list)
+    completed_results: list[TaskResult] = field(default_factory=list)
+    messages: list[AgentMessage] = field(default_factory=list)
+
+    @property
+    def current_task(self) -> DelegatedTask | None:
+        """Get the next pending task to execute."""
+        return self.pending_tasks[0] if self.pending_tasks else None
+
+    def complete_task(self, result: TaskResult) -> None:
+        """Mark current task as complete and move to completed list."""
+        if self.pending_tasks:
+            self.pending_tasks.pop(0)
+        self.completed_results.append(result)
+
+    def to_context(self) -> CollaborationContext:
+        """Convert state to CollaborationContext for agent deps."""
+        return CollaborationContext(
+            messages=self.messages,
+            task_results=self.completed_results,
+        )
 
 
 # --8<-- [end:models]
@@ -223,6 +277,161 @@ ROLE_AGENTS = {
     AgentRole.REVIEWER: reviewer_agent,
 }
 # --8<-- [end:agents]
+
+
+# --8<-- [start:graph_nodes]
+@dataclass
+class PlanNode(BaseNode[CollaborationState, None, CollaborationResult]):
+    """Create delegation plan from supervisor agent."""
+
+    async def run(
+        self,
+        ctx: GraphRunContext[CollaborationState],
+    ) -> ExecuteTaskNode | End[CollaborationResult]:
+        """Create plan and transition to execution or end."""
+        state = ctx.state
+        print(f"Supervisor: Planning for '{state.objective[:50]}...'")
+
+        result = await supervisor_agent.run(
+            f"Create a delegation plan for this objective:\n\n"
+            f"{state.objective}\n\n"
+            f"Assign tasks to appropriate specialists. "
+            f"Consider dependencies between tasks."
+        )
+
+        state.plan = result.output
+        state.pending_tasks = list(state.plan.tasks[: state.max_tasks])
+
+        print(f"  Created plan with {len(state.pending_tasks)} tasks")
+        for task in state.pending_tasks:
+            print(f"    - Task {task.task_id}: {task.assigned_to.value}")
+
+        if state.pending_tasks:
+            return ExecuteTaskNode()
+        # No tasks - return empty result
+        return End(
+            CollaborationResult(
+                objective=state.objective,
+                success=False,
+                task_results=[],
+                final_output="No tasks were created.",
+                messages_exchanged=0,
+            )
+        )
+
+
+@dataclass
+class ExecuteTaskNode(BaseNode[CollaborationState, None, CollaborationResult]):
+    """Execute the current pending task."""
+
+    async def run(
+        self,
+        ctx: GraphRunContext[CollaborationState],
+    ) -> ExecuteTaskNode | SynthesizeNode:
+        """Execute task and loop or proceed to synthesis."""
+        state = ctx.state
+        task = state.current_task
+        if task is None:
+            return SynthesizeNode()
+
+        print(f"  Worker ({task.assigned_to.value}): Task {task.task_id}")
+
+        agent = ROLE_AGENTS.get(task.assigned_to)
+        if agent is None:
+            result = TaskResult(
+                task_id=task.task_id,
+                agent_role=task.assigned_to,
+                success=False,
+                output=f"No agent for role: {task.assigned_to.value}",
+            )
+        else:
+            # Build context from previous results
+            prev_outputs = "\n\n".join(
+                f"[{r.agent_role.value}]: {r.output}"
+                for r in state.completed_results
+            )
+
+            prompt = (
+                f"Task: {task.description}\n\n"
+                f"Context: {task.context}\n\n"
+                f"Previous work:\n{prev_outputs or 'None'}\n\n"
+                f"Complete this task and provide your output."
+            )
+
+            agent_result = await agent.run(prompt, deps=state.to_context())
+            result = agent_result.output
+            result.task_id = task.task_id
+            result.agent_role = task.assigned_to
+
+        status = "SUCCESS" if result.success else "FAILED"
+        print(f"    Task {task.task_id}: {status}")
+
+        # Record message
+        state.messages.append(
+            AgentMessage(
+                sender=task.assigned_to,
+                recipient=AgentRole.SUPERVISOR,
+                content=f"Task {task.task_id}: {result.output[:100]}",
+                task_id=task.task_id,
+            )
+        )
+
+        state.complete_task(result)
+
+        # Loop if more tasks, otherwise synthesize
+        if state.pending_tasks:
+            return ExecuteTaskNode()
+        return SynthesizeNode()
+
+
+@dataclass
+class SynthesizeNode(BaseNode[CollaborationState, None, CollaborationResult]):
+    """Synthesize all task results into final output."""
+
+    async def run(
+        self,
+        ctx: GraphRunContext[CollaborationState],
+    ) -> End[CollaborationResult]:
+        """Combine results and return final collaboration result."""
+        state = ctx.state
+        print("  Synthesizer: Combining results...")
+
+        completed = [r for r in state.completed_results if r.success]
+        outputs = "\n\n".join(
+            f"[{r.agent_role.value}] Task {r.task_id}:\n{r.output}"
+            for r in completed
+        )
+
+        result = await synthesizer_agent.run(
+            f"Objective: {state.objective}\n\n"
+            f"Completed task outputs:\n{outputs}\n\n"
+            f"Synthesize these into a final, coherent response."
+        )
+
+        success_count = len(completed)
+        total_count = len(state.completed_results)
+        success = success_count == total_count and total_count > 0
+
+        print(f"\nDone: {success_count}/{total_count} tasks succeeded")
+
+        return End(
+            CollaborationResult(
+                objective=state.objective,
+                success=success,
+                task_results=state.completed_results,
+                final_output=result.output,
+                messages_exchanged=len(state.messages),
+            )
+        )
+
+
+# Define the collaboration graph
+collaboration_graph: Graph[CollaborationState, None, CollaborationResult] = (
+    Graph(
+        nodes=[PlanNode, ExecuteTaskNode, SynthesizeNode],
+    )
+)
+# --8<-- [end:graph_nodes]
 
 
 # --8<-- [start:collaboration]
@@ -400,6 +609,8 @@ async def run_collaborative_task(
     This implements the Supervisor pattern where a supervisor agent
     delegates tasks to specialized workers, then synthesizes results.
 
+    Uses pydantic_graph for state machine orchestration.
+
     Args:
         objective: The high-level goal to accomplish.
         max_tasks: Maximum number of tasks to create.
@@ -412,50 +623,12 @@ async def run_collaborative_task(
     print("=" * 60)
     print(f"Objective: {objective[:80]}...")
 
-    # Initialize collaboration context
-    context = CollaborationContext(messages=[], task_results=[])
+    # Initialize state and run graph
+    state = CollaborationState(objective=objective, max_tasks=max_tasks)
+    result = await collaboration_graph.run(PlanNode(), state=state)
 
-    # Phase 1: Supervisor creates delegation plan
-    plan = await create_delegation_plan(objective)
-
-    # Limit tasks if needed
-    tasks = plan.tasks[:max_tasks]
-
-    # Phase 2: Execute tasks sequentially (respecting dependencies)
-    print("\nExecuting tasks...")
-    for task in tasks:
-        result = await execute_task(task, context)
-        context.task_results.append(result)
-
-        # Add message to log
-        msg_content = f"Completed task {task.task_id}: {result.output[:100]}"
-        context.messages.append(
-            AgentMessage(
-                sender=task.assigned_to,
-                recipient=AgentRole.SUPERVISOR,
-                content=msg_content,
-                task_id=task.task_id,
-            )
-        )
-
-    # Phase 3: Synthesize final output
-    print("\nSynthesizing results...")
-    final_output = await synthesize_results(objective, context.task_results)
-
-    # Calculate success
-    completed = sum(1 for r in context.task_results if r.success)
-    success = completed == len(tasks) and len(tasks) > 0
-
-    print("\n" + "=" * 60)
-    print(f"Collaboration complete: {completed}/{len(tasks)} tasks succeeded")
-
-    return CollaborationResult(
-        objective=objective,
-        success=success,
-        task_results=context.task_results,
-        final_output=final_output,
-        messages_exchanged=len(context.messages),
-    )
+    print("=" * 60)
+    return result.output
 
 
 async def run_network_collaboration(

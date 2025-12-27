@@ -8,12 +8,14 @@ the same vibe-coding workflow that produced it.
 This repository was built using:
 
 1. **Claude Code** - Anthropic's CLI for Claude
-2. **haiku-rag** - RAG framework for indexing the source book
+2. **[haiku-rag](https://github.com/ggozad/haiku.rag)** - RAG framework for indexing the source book
 3. **Ollama** - Local LLM inference
 4. **pydantic-ai** - The target framework for implementations
+5. **[Context7 MCP Server](https://github.com/upstash/context7)** - Library API documentation lookup
 
 The workflow: Index the book PDF with haiku-rag, expose it as an MCP server,
-then use Claude Code to implement each pattern based on the book content.
+use Context7 for up-to-date pydantic-ai API docs, then use Claude Code to
+implement each pattern based on the book content.
 
 ## Prerequisites
 
@@ -189,67 +191,22 @@ Update pattern documentation in `docs/patterns/`.
 
 ---
 
-## PydanticAI Idioms
+## Implementation Idioms
 
-Use these native features instead of manual Python control flow:
+For detailed idioms and patterns for pydantic-ai, pydantic_graph, and pydantic-evals,
+see [Implementation Idioms](idioms.md).
 
-### Output Validation with ModelRetry
+Quick reference decision framework:
 
-```python
-@agent.output_validator
-async def validate(ctx: RunContext[Deps], output: Output) -> Output:
-    if not meets_criteria(output):
-        raise ModelRetry("Feedback for improvement")
-    return output
-```
-
-**Use when:** Quality criteria exist, failed outputs should retry with feedback.
-
-### Dynamic System Prompts
-
-```python
-@agent.system_prompt
-def add_context(ctx: RunContext[Deps]) -> str:
-    return f"Context: {ctx.deps.some_field}"
-```
-
-**Use when:** Injecting persistent context (history, preferences, knowledge).
-
-### Tools with RunContext
-
-```python
-@agent.tool
-async def my_tool(ctx: RunContext[Deps], query: str) -> str:
-    return ctx.deps.service.process(query)
-```
-
-**Use when:** Agent needs to dynamically fetch external data.
-
-### Dependencies Pattern
-
-```python
-@dataclass
-class MyDeps:
-    threshold: float = 0.8
-    service: SomeService | None = None
-
-result = await agent.run("query", deps=MyDeps(threshold=0.9))
-```
-
-**Use when:** Runtime configuration, shared services, state across decorators.
-
----
-
-## Decision Framework
-
-When evaluating how to implement a pattern:
-
-1. **Is there a retry loop?** → Use `@output_validator` + `ModelRetry`
-2. **Is context injected into system prompt?** → Use `@system_prompt`
-3. **Is there shared runtime state?** → Use `deps_type`
-4. **Does the agent need to fetch data dynamically?** → Use `@tool`
-
-If "no" to all, the pattern may not need these features.
+| Question | Solution |
+|----------|----------|
+| Retry loop needed? | `@output_validator` + `ModelRetry` |
+| Inject system context? | `@system_prompt` |
+| Share runtime state? | `deps_type` |
+| Fetch data dynamically? | `@tool` |
+| Multi-step stateful workflow? | `pydantic_graph` |
+| Cyclic transitions? | Graph nodes with self-return |
+| Systematic quality testing? | `pydantic-evals` Dataset |
 
 ---
 
@@ -327,6 +284,7 @@ ollama list  # Verify it's available
 ## Additional Resources
 
 - [pydantic-ai Documentation](https://ai.pydantic.dev/)
-- [haiku-rag Repository](https://github.com/anthropics/haiku-rag)
+- [haiku-rag Repository](https://github.com/ggozad/haiku.rag)
+- [Context7 MCP Server](https://github.com/upstash/context7)
 - [Ollama Documentation](https://ollama.ai/)
 - [Claude Code Documentation](https://docs.anthropic.com/claude-code)

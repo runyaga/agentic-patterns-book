@@ -1,12 +1,56 @@
 #!/usr/bin/env bash
 # Integration test runner - requires Ollama running locally
+#
+# Usage:
+#   ./scripts/integration_test.sh              # Run all patterns
+#   ./scripts/integration_test.sh evaluation   # Run single pattern
+#   ./scripts/integration_test.sh routing -v   # Run single pattern with verbose output
+#
+# Environment:
+#   OLLAMA_URL    - Ollama server URL (default: http://localhost:11434)
+#   LOGFIRE_TOKEN - Enable Logfire tracing
+#   REQUIRED_MODEL - Model to use (default: gpt-oss:20b)
+#   RETRY_COUNT   - Number of retries (default: 2)
+#   TIMEOUT_SECS  - Timeout per pattern (default: 120)
 
 OLLAMA_URL="${OLLAMA_URL:-http://localhost:11434}"
 REQUIRED_MODEL="${REQUIRED_MODEL:-gpt-oss:20b}"
 RETRY_COUNT="${RETRY_COUNT:-2}"
 TIMEOUT_SECS="${TIMEOUT_SECS:-120}"
 
-PATTERNS=(
+# Parse arguments
+SINGLE_PATTERN=""
+VERBOSE=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -v|--verbose)
+            VERBOSE=true
+            shift
+            ;;
+        -h|--help)
+            echo "Usage: $0 [pattern] [-v|--verbose]"
+            echo ""
+            echo "Examples:"
+            echo "  $0                    # Run all patterns"
+            echo "  $0 evaluation         # Run evaluation pattern"
+            echo "  $0 routing -v         # Run routing with verbose output"
+            echo ""
+            echo "Available patterns:"
+            echo "  prompt_chaining, routing, parallelization, reflection,"
+            echo "  tool_use, planning, multi_agent, memory, learning,"
+            echo "  human_in_loop, knowledge_retrieval, resource_aware,"
+            echo "  guardrails, evaluation, prioritization"
+            exit 0
+            ;;
+        *)
+            SINGLE_PATTERN="$1"
+            shift
+            ;;
+    esac
+done
+
+ALL_PATTERNS=(
     prompt_chaining
     routing
     parallelization
@@ -23,6 +67,25 @@ PATTERNS=(
     evaluation
     prioritization
 )
+
+# If single pattern specified, validate and use it
+if [ -n "$SINGLE_PATTERN" ]; then
+    valid=false
+    for p in "${ALL_PATTERNS[@]}"; do
+        if [ "$p" == "$SINGLE_PATTERN" ]; then
+            valid=true
+            break
+        fi
+    done
+    if ! $valid; then
+        echo "ERROR: Unknown pattern '$SINGLE_PATTERN'"
+        echo "Valid patterns: ${ALL_PATTERNS[*]}"
+        exit 1
+    fi
+    PATTERNS=("$SINGLE_PATTERN")
+else
+    PATTERNS=("${ALL_PATTERNS[@]}")
+fi
 
 # Results tracking
 PASSED=0
@@ -121,11 +184,26 @@ run_with_timeout() {
 
 run_pattern() {
     local pattern=$1
-    run_with_timeout "$TIMEOUT_SECS" .venv/bin/python -m "agentic_patterns.$pattern" > /dev/null 2>&1
-    return $?
+    if $VERBOSE; then
+        echo ""
+        echo "--- Running: .venv/bin/python -m agentic_patterns.$pattern ---"
+        run_with_timeout "$TIMEOUT_SECS" .venv/bin/python -m "agentic_patterns.$pattern"
+        local exit_code=$?
+        echo "--- Exit code: $exit_code ---"
+        echo ""
+        return $exit_code
+    else
+        run_with_timeout "$TIMEOUT_SECS" .venv/bin/python -m "agentic_patterns.$pattern" > /dev/null 2>&1
+        return $?
+    fi
 }
 
-echo "=== Integration Tests ==="
+# Show what we're running
+if [ -n "$SINGLE_PATTERN" ]; then
+    echo "=== Integration Test: $SINGLE_PATTERN ==="
+else
+    echo "=== Integration Tests ==="
+fi
 echo ""
 
 FIRST_FAILED=""

@@ -2,6 +2,17 @@
 
 Classify user intent and route queries to specialized handlers.
 
+## Flow Diagram
+
+```mermaid
+flowchart LR
+    Q[User Query] --> R[Router Agent]
+    R --> |order_status| O[Order Handler]
+    R --> |product_info| P[Product Handler]
+    R --> |technical_support| T[Support Handler]
+    R --> |clarification| C[Clarification Handler]
+```
+
 ## Implementation
 
 Source: [`src/agentic_patterns/routing.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/routing.py)
