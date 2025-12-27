@@ -1,8 +1,8 @@
 # Spec 04: Human-in-the-Loop Graph
 
-**Status**: DRAFT
+**Status**: DEFERRED
 **Decision**: NEW - demonstrates graph strengths for interactive workflows
-**Priority**: P2
+**Priority**: P2 (punted - existing functional implementation sufficient)
 **Complexity**: Medium
 
 ---
