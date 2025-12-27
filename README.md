@@ -66,6 +66,8 @@ uv venv && uv pip install -e ".[dev]" --python .venv/bin/python
 | [Multi-Agent](src/agentic_patterns/multi_agent.py) | 7 | Supervisor and network collaboration |
 | [Memory](src/agentic_patterns/memory.py) | 8 | Buffer, window, and summary memory |
 | [Learning](src/agentic_patterns/learning.py) | 9 | Experience-based adaptation |
+| [MCP Integration](src/agentic_patterns/mcp_integration.py) | 10 | Model Context Protocol tool usage |
+| [Exception Recovery](src/agentic_patterns/exception_recovery.py) | 12 | Phoenix Protocol: Clinic agent for error diagnosis |
 | [Human-in-Loop](src/agentic_patterns/human_in_loop.py) | 13 | Escalation and approval workflows |
 | [Knowledge Retrieval](src/agentic_patterns/knowledge_retrieval.py) | 14 | RAG pipeline |
 | [Resource-Aware](src/agentic_patterns/resource_aware.py) | 16 | Budget management and model selection |
