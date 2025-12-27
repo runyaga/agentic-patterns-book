@@ -1,341 +1,211 @@
-# Specification: The Universal Connector (MCP)
+# Specification: MCP Integration (Tool Extensibility)
 
 **Chapter:** 10
-**Pattern Name:** The Universal Connector
-**Status:** Draft v2
-**Module:** `src/agentic_patterns/mcp_connector.py`
+**Pattern Name:** MCP Integration
+**Status:** Draft v3 (Simplified)
+**Module:** `src/agentic_patterns/mcp_integration.py`
 
 ## 1. Overview
 
-Hardcoding tools into an agent makes the system brittle. The **Universal
-Connector** demonstrates advanced MCP (Model Context Protocol) patterns beyond
-basic `toolsets=[server]` usage.
+The original "Universal Connector" spec proposed an abstraction layer over
+pydantic-ai's MCP support. **This is unnecessary.** pydantic-ai already has
+clean, idiomatic MCP integration out of the box.
 
-### 1.1 What This Pattern Adds
+This pattern demonstrates **how to use pydantic-ai's native MCP support**
+rather than building a custom connector.
 
-pydantic-ai has native MCP support:
+### 1.1 What pydantic-ai Already Provides
+
 ```python
-from pydantic_ai.mcp import MCPServerStdio
-server = MCPServerStdio('cmd', args=['server.py'])
-agent = Agent('model', toolsets=[server])
+from pydantic_ai import Agent
+from pydantic_ai.mcp import MCPServerStdio, MCPServerSSE
+
+# Single server - just works
+server = MCPServerStdio('python', args=['my_server.py'])
+agent = Agent('openai:gpt-4', toolsets=[server])
+
+# Multiple servers - just works
+agent = Agent('openai:gpt-4', toolsets=[server1, server2, server3])
+
+# HTTP/SSE servers - just works
+http_server = MCPServerSSE('http://localhost:3001/sse')
+agent = Agent('openai:gpt-4', toolsets=[http_server])
 ```
 
-This pattern adds:
+### 1.2 What We DON'T Need to Build
 
-| Capability | Native pydantic-ai | Universal Connector |
-|------------|-------------------|---------------------|
-| Single server | Yes | Yes |
-| Multiple servers | Manual setup | Orchestrated |
-| Server selection | No | Agent chooses servers |
-| Fallback on failure | No | Automatic failover |
-| Deps passing to MCP | Manual `process_tool_call` | Built-in |
-| Server health checks | No | Periodic ping |
+| Feature | Status | Why |
+|---------|--------|-----|
+| Multi-server support | Native | `toolsets=[s1, s2]` |
+| Tool discovery | Native | Automatic on agent creation |
+| Tool prefixes | Native | `tool_prefix='calc'` param |
+| Deps injection | Native | `process_tool_call` callback |
+| Server health | Overkill | MCP handles connection errors |
+| Fallback routing | Overkill | Different tools, not redundancy |
 
-### 1.2 Use Cases
+### 1.3 What This Pattern Actually Teaches
 
-1. **Multi-server orchestration:** Connect to filesystem, database, and API
-   servers simultaneously
-2. **Dynamic capability discovery:** Agent inspects available tools before
-   deciding approach
-3. **Resilient tool access:** If primary server fails, try backup
-4. **Context passing:** Propagate agent deps to MCP server handlers
+1. **Idiomatic multi-server setup** - How to connect to multiple MCP servers
+2. **Deps propagation** - How to pass agent deps to MCP tool handlers
+3. **Tool prefixes** - How to avoid naming conflicts
+4. **Building MCP servers** - How to create servers with FastMCP
 
 ## 2. Architecture
 
-### 2.1 Data Flow
+### 2.1 Native Multi-Server Pattern
 
 ```mermaid
 sequenceDiagram
     participant Agent
-    participant Connector as UniversalConnector
-    participant Server1 as MCP Server A
-    participant Server2 as MCP Server B
+    participant Server1 as MCP Server (calc)
+    participant Server2 as MCP Server (fs)
 
-    Agent->>Connector: Initialize with configs
-    Connector->>Server1: Connect (stdio)
-    Connector->>Server2: Connect (stdio)
-    Server1-->>Connector: Tool list A
-    Server2-->>Connector: Tool list B
+    Note over Agent: toolsets=[calc_server, fs_server]
+    Agent->>Server1: list_tools()
+    Agent->>Server2: list_tools()
+    Server1-->>Agent: [add, multiply]
+    Server2-->>Agent: [read_file, list_dir]
 
-    Agent->>Connector: Use tool "query_db"
-    Connector->>Connector: Route to Server A
-    Connector->>Server1: call_tool("query_db", args)
-    Server1-->>Connector: Result
-    Connector-->>Agent: Result
-
-    Note over Connector,Server1: If Server A fails...
-    Agent->>Connector: Use tool "query_db"
-    Connector->>Server1: call_tool (fails)
-    Connector->>Server2: Fallback attempt
-    Server2-->>Connector: Result
-    Connector-->>Agent: Result
+    Agent->>Agent: LLM decides to use "add"
+    Agent->>Server1: call_tool("add", {a:1, b:2})
+    Server1-->>Agent: 3
 ```
 
-### 2.2 Data Models
+No custom routing needed. The agent sees all tools and the LLM picks the right one.
+
+## 3. Implementation
+
+### 3.1 Multi-Server Agent (Native)
 
 ```python
-from dataclasses import dataclass, field
-from typing import Any, Callable, Awaitable
-from pydantic import BaseModel, Field
-from pydantic_ai import RunContext
+"""
+MCP Integration Pattern - Idiomatic pydantic-ai usage.
+
+This module demonstrates native MCP support in pydantic-ai.
+No custom connector class needed.
+"""
+
+from pydantic_ai import Agent
+from pydantic_ai.mcp import MCPServerStdio
+
+from agentic_patterns._models import get_model
 
 
-class MCPServerConfig(BaseModel):
-    """Configuration for an MCP server subprocess."""
-    name: str = Field(description="Unique server identifier")
-    command: str = Field(description="Command to run (e.g., 'python')")
-    args: list[str] = Field(
-        default_factory=list,
-        description="Command arguments"
+async def create_multi_server_agent(
+    system_prompt: str = "You have access to calculator and filesystem tools.",
+) -> Agent:
+    """
+    Create an agent with multiple MCP servers.
+
+    This is just native pydantic-ai - no abstraction needed.
+
+    Example:
+        async with create_multi_server_agent() as agent:
+            result = await agent.run("What is 2 + 2?")
+    """
+    calc_server = MCPServerStdio(
+        'python',
+        args=['-m', 'agentic_patterns.mcp_servers.calculator'],
     )
-    env: dict[str, str] | None = Field(
-        default=None,
-        description="Environment variables"
-    )
-    priority: int = Field(
-        default=0,
-        description="Higher = preferred for fallback (0-100)"
-    )
-    tags: list[str] = Field(
-        default_factory=list,
-        description="Capability tags for routing"
+
+    fs_server = MCPServerStdio(
+        'python',
+        args=['-m', 'agentic_patterns.mcp_servers.filesystem'],
     )
 
-
-class DiscoveredTool(BaseModel):
-    """Tool discovered from an MCP server."""
-    name: str
-    description: str
-    input_schema: dict[str, Any]
-    server_name: str
-    server_priority: int = 0
-
-
-class ServerHealth(BaseModel):
-    """Health status of an MCP server."""
-    name: str
-    is_connected: bool
-    last_ping: float | None = None  # timestamp
-    error_count: int = 0
-    tools_available: int = 0
-
-
-class ConnectorState(BaseModel):
-    """Current state of the connector."""
-    servers: list[ServerHealth]
-    total_tools: int
-    last_discovery: float | None = None
-
-
-@dataclass
-class ConnectorDeps:
-    """Dependencies passed through to MCP tool calls."""
-    user_context: dict[str, Any] = field(default_factory=dict)
-    request_id: str | None = None
-
-
-# Type alias for process_tool_call signature
-ProcessToolCallFn = Callable[
-    [RunContext[Any], Any, str, dict[str, Any]],
-    Awaitable[Any]
-]
+    return Agent(
+        get_model(),
+        system_prompt=system_prompt,
+        toolsets=[calc_server, fs_server],
+    )
 ```
 
-### 2.3 The Connector Class
+### 3.2 Tool Prefixes for Naming Conflicts
 
 ```python
 from pydantic_ai import Agent
 from pydantic_ai.mcp import MCPServerStdio
 
+# Both servers might have a tool called "process"
+server_a = MCPServerStdio(
+    'python', args=['server_a.py'],
+    tool_prefix='a',  # Tools become: a_process, a_query
+)
 
-class UniversalConnector:
-    """
-    Manages multiple MCP servers with orchestration features.
+server_b = MCPServerStdio(
+    'python', args=['server_b.py'],
+    tool_prefix='b',  # Tools become: b_process, b_query
+)
 
-    Features:
-    - Multi-server connection management
-    - Tool discovery across all servers
-    - Automatic fallback on server failure
-    - Deps propagation to MCP handlers
-    - Health monitoring
-    """
-
-    def __init__(
-        self,
-        configs: list[MCPServerConfig],
-        auto_connect: bool = True,
-    ):
-        self.configs = configs
-        self._servers: dict[str, MCPServerStdio] = {}
-        self._tools: dict[str, DiscoveredTool] = {}
-        self._health: dict[str, ServerHealth] = {}
-
-    async def connect_all(self) -> None:
-        """Connect to all configured servers."""
-        ...
-
-    async def disconnect_all(self) -> None:
-        """Gracefully disconnect from all servers."""
-        ...
-
-    async def discover_tools(self) -> list[DiscoveredTool]:
-        """Discover tools from all connected servers."""
-        ...
-
-    async def call_tool(
-        self,
-        name: str,
-        arguments: dict[str, Any],
-        deps: ConnectorDeps | None = None,
-    ) -> Any:
-        """
-        Call a tool with automatic server routing and fallback.
-
-        Routes to the server that provides the tool. If that server
-        fails, attempts fallback to other servers with the same tool.
-        """
-        ...
-
-    def create_agent(
-        self,
-        system_prompt: str,
-        output_type: type | None = None,
-    ) -> Agent:
-        """
-        Create a pydantic-ai Agent with all discovered tools.
-
-        The agent will have access to tools from all connected servers.
-        """
-        ...
-
-    def get_state(self) -> ConnectorState:
-        """Get current connector state for monitoring."""
-        ...
+agent = Agent('openai:gpt-4', toolsets=[server_a, server_b])
+# Agent sees: a_process, a_query, b_process, b_query
 ```
 
-### 2.4 Entry Points
+### 3.3 Deps Propagation to MCP Servers
 
 ```python
-async def create_mcp_agent(
-    configs: list[MCPServerConfig],
-    system_prompt: str,
-    output_type: type | None = None,
-    deps_type: type | None = None,
-) -> Agent:
-    """
-    Create an agent connected to multiple MCP servers.
+from dataclasses import dataclass
+from typing import Any
 
-    Convenience function that:
-    1. Creates a UniversalConnector
-    2. Connects to all servers
-    3. Discovers tools
-    4. Returns configured Agent
+from pydantic_ai import Agent, RunContext
+from pydantic_ai.mcp import CallToolFunc, MCPServerStdio, ToolResult
 
-    Args:
-        configs: MCP server configurations.
-        system_prompt: Agent system prompt.
-        output_type: Optional structured output type.
-        deps_type: Optional dependencies type.
-
-    Returns:
-        Configured Agent with MCP tools.
-
-    Example:
-        agent = await create_mcp_agent(
-            configs=[
-                MCPServerConfig(
-                    name="filesystem",
-                    command="python",
-                    args=["fs_server.py"],
-                ),
-                MCPServerConfig(
-                    name="database",
-                    command="python",
-                    args=["db_server.py"],
-                ),
-            ],
-            system_prompt="You can access files and databases.",
-        )
-        result = await agent.run("List files in /tmp")
-    """
-    ...
+from agentic_patterns._models import get_model
 
 
-async def with_mcp_fallback(
-    primary: MCPServerConfig,
-    fallbacks: list[MCPServerConfig],
-    tool_name: str,
-    arguments: dict[str, Any],
-) -> Any:
-    """
-    Call an MCP tool with automatic fallback.
+@dataclass
+class AppDeps:
+    """Dependencies to pass through to MCP tools."""
+    user_id: str
+    request_id: str
 
-    Tries primary server first, then fallbacks in order.
 
-    Args:
-        primary: Primary server configuration.
-        fallbacks: Backup server configurations.
-        tool_name: Tool to call.
-        arguments: Tool arguments.
-
-    Returns:
-        Tool result from first successful server.
-
-    Raises:
-        MCPAllServersFailedError: If all servers fail.
-    """
-    ...
-```
-
-## 3. Idiomatic Feature Table
-
-| Feature | Used? | Implementation |
-|---------|-------|----------------|
-| `@output_validator` + `ModelRetry` | No | MCP errors handled via fallback, not retry |
-| `@system_prompt` | Yes | Inject discovered tool descriptions |
-| `deps_type` + `RunContext` | Yes | `ConnectorDeps` passed to `process_tool_call` |
-| `@tool` / `@tool_plain` | No | Tools come from MCP servers |
-| `pydantic_graph` | No | Connection management, not workflow |
-
-## 4. Deps Propagation
-
-Pass agent deps to MCP server handlers:
-
-```python
-async def process_tool_call_with_deps(
-    ctx: RunContext[ConnectorDeps],
+async def process_tool_call(
+    ctx: RunContext[AppDeps],
     call_tool: CallToolFunc,
     name: str,
     tool_args: dict[str, Any],
 ) -> ToolResult:
     """
-    Process tool call, injecting deps into MCP metadata.
+    Inject deps into MCP tool calls.
 
     The MCP server can access these via ctx.request_context.meta.deps
     """
     meta = {
-        "deps": {
-            "user_context": ctx.deps.user_context,
-            "request_id": ctx.deps.request_id,
-        }
+        'user_id': ctx.deps.user_id,
+        'request_id': ctx.deps.request_id,
     }
     return await call_tool(name, tool_args, meta)
 
 
-# Usage in connector
-server = MCPServerStdio(
-    config.command,
-    args=config.args,
-    process_tool_call=process_tool_call_with_deps,
-)
+def create_agent_with_deps() -> Agent[AppDeps, str]:
+    """Create agent that passes deps to MCP servers."""
+    server = MCPServerStdio(
+        'python',
+        args=['my_server.py'],
+        process_tool_call=process_tool_call,
+    )
+
+    return Agent(
+        get_model(),
+        deps_type=AppDeps,
+        toolsets=[server],
+    )
+
+
+# Usage:
+# result = await agent.run(
+#     "Do something",
+#     deps=AppDeps(user_id="123", request_id="abc"),
+# )
 ```
 
-## 5. Example MCP Servers
-
-### 5.1 Calculator Server
+### 3.4 Example MCP Server (FastMCP)
 
 ```python
 # src/agentic_patterns/mcp_servers/calculator.py
+"""Simple calculator MCP server."""
+
 from mcp.server.fastmcp import FastMCP
 
 app = FastMCP("Calculator")
@@ -353,15 +223,24 @@ def multiply(a: float, b: float) -> float:
     return a * b
 
 
+@app.tool()
+def divide(a: float, b: float) -> float:
+    """Divide two numbers."""
+    if b == 0:
+        raise ValueError("Cannot divide by zero")
+    return a / b
+
+
 if __name__ == "__main__":
     app.run(transport="stdio")
 ```
 
-### 5.2 File System Server
-
 ```python
 # src/agentic_patterns/mcp_servers/filesystem.py
+"""Simple filesystem MCP server."""
+
 from pathlib import Path
+
 from mcp.server.fastmcp import FastMCP
 
 app = FastMCP("Filesystem")
@@ -370,146 +249,178 @@ app = FastMCP("Filesystem")
 @app.tool()
 def list_directory(path: str) -> list[str]:
     """List files in a directory."""
-    return [f.name for f in Path(path).iterdir()]
+    p = Path(path)
+    if not p.exists():
+        raise ValueError(f"Path does not exist: {path}")
+    if not p.is_dir():
+        raise ValueError(f"Path is not a directory: {path}")
+    return [f.name for f in p.iterdir()]
 
 
 @app.tool()
-def read_file(path: str) -> str:
-    """Read file contents."""
-    return Path(path).read_text()
+def read_file(path: str, max_chars: int = 10000) -> str:
+    """Read file contents (truncated to max_chars)."""
+    p = Path(path)
+    if not p.exists():
+        raise ValueError(f"File does not exist: {path}")
+    if not p.is_file():
+        raise ValueError(f"Path is not a file: {path}")
+    content = p.read_text()
+    if len(content) > max_chars:
+        return content[:max_chars] + f"\n... [truncated, {len(content)} total chars]"
+    return content
 
 
 if __name__ == "__main__":
     app.run(transport="stdio")
 ```
 
+## 4. Entry Point
+
+```python
+async def run_with_mcp_tools(
+    prompt: str,
+    servers: list[MCPServerStdio] | None = None,
+) -> str:
+    """
+    Run a prompt with MCP tool access.
+
+    Simple wrapper showing idiomatic usage.
+
+    Args:
+        prompt: The user prompt.
+        servers: MCP servers to use. Defaults to calculator.
+
+    Returns:
+        Agent response.
+
+    Example:
+        result = await run_with_mcp_tools("What is 15 * 7?")
+        print(result)  # "105"
+    """
+    if servers is None:
+        servers = [
+            MCPServerStdio(
+                'python',
+                args=['-m', 'agentic_patterns.mcp_servers.calculator'],
+            ),
+        ]
+
+    agent = Agent(
+        get_model(),
+        system_prompt="Use the available tools to help the user.",
+        toolsets=servers,
+    )
+
+    async with agent:
+        result = await agent.run(prompt)
+        return result.output
+```
+
+## 5. Idiomatic Feature Table
+
+| Feature | Used? | Implementation |
+|---------|-------|----------------|
+| `@output_validator` | No | Not relevant to MCP |
+| `@system_prompt` | No | Static prompt sufficient |
+| `deps_type` + `RunContext` | Yes | `process_tool_call` for deps injection |
+| `@tool` / `@tool_plain` | No | Tools come from MCP servers |
+| `pydantic_graph` | No | Simple agent pattern |
+| `toolsets` | **Yes** | Native multi-server support |
+| `tool_prefix` | **Yes** | Avoid naming conflicts |
+| `process_tool_call` | **Yes** | Deps propagation |
+
 ## 6. Test Strategy
 
-### 6.1 Unit Tests (Mocked Servers)
+### 6.1 Unit Tests (Mocked)
 
 ```python
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
-@pytest.fixture
-def mock_mcp_server():
-    """Mock MCPServerStdio for unit tests."""
-    server = MagicMock()
-    server.list_tools = AsyncMock(return_value=[
-        {"name": "add", "description": "Add numbers", "inputSchema": {}},
-    ])
-    server.call_tool = AsyncMock(return_value={"result": 5})
-    return server
-
-
-async def test_discover_tools(mock_mcp_server):
-    """Should discover tools from connected servers."""
-    connector = UniversalConnector([
-        MCPServerConfig(name="calc", command="python", args=["calc.py"])
+async def test_multi_server_discovers_all_tools():
+    """Agent should see tools from all servers."""
+    # Mock server responses
+    mock_calc = MagicMock()
+    mock_calc.list_tools = AsyncMock(return_value=[
+        {"name": "add", "description": "Add numbers"},
     ])
 
-    with patch.object(connector, "_servers", {"calc": mock_mcp_server}):
-        tools = await connector.discover_tools()
-
-    assert len(tools) == 1
-    assert tools[0].name == "add"
-    assert tools[0].server_name == "calc"
-
-
-async def test_fallback_on_failure(mock_mcp_server):
-    """Should fallback to secondary server on primary failure."""
-    primary = MagicMock()
-    primary.call_tool = AsyncMock(side_effect=ConnectionError("Down"))
-
-    secondary = MagicMock()
-    secondary.call_tool = AsyncMock(return_value={"result": 10})
-
-    connector = UniversalConnector([
-        MCPServerConfig(name="primary", command="p", args=[], priority=100),
-        MCPServerConfig(name="secondary", command="s", args=[], priority=50),
+    mock_fs = MagicMock()
+    mock_fs.list_tools = AsyncMock(return_value=[
+        {"name": "read_file", "description": "Read a file"},
     ])
 
-    with patch.object(
-        connector, "_servers", {"primary": primary, "secondary": secondary}
-    ):
-        result = await connector.call_tool("add", {"a": 1, "b": 2})
+    # Verify both tool sets are available
+    # (Implementation depends on how we test Agent internals)
 
-    assert result == {"result": 10}
-    secondary.call_tool.assert_called_once()
+
+async def test_tool_prefix_applied():
+    """Tools should be prefixed to avoid conflicts."""
+    server = MCPServerStdio(
+        'python', args=['server.py'],
+        tool_prefix='calc',
+    )
+    # When agent lists tools, they should be prefixed
+    # calc_add, calc_multiply, etc.
+
+
+async def test_deps_passed_to_tool_call():
+    """Deps should be injected into MCP tool calls."""
+    deps = AppDeps(user_id="123", request_id="abc")
+
+    captured_meta = {}
+
+    async def mock_call_tool(name, args, meta=None):
+        captured_meta.update(meta or {})
+        return {"result": "ok"}
+
+    # Run agent with deps
+    # Verify captured_meta contains user_id and request_id
 ```
 
-### 6.2 Integration Tests (Real Subprocess)
+### 6.2 Integration Tests
 
 ```python
 import subprocess
 import sys
 
+
 @pytest.fixture
 async def calculator_server():
-    """Start real calculator MCP server."""
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable,
-        "src/agentic_patterns/mcp_servers/calculator.py",
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-    )
-    yield proc
-    proc.terminate()
-    await proc.wait()
+    """Start real calculator MCP server for integration test."""
+    # Note: In practice, pydantic-ai handles subprocess lifecycle
+    # This is just for standalone server testing
+    pass
 
 
-async def test_real_mcp_connection(calculator_server):
+async def test_calculator_integration():
     """Integration test with real MCP server."""
-    connector = UniversalConnector([
-        MCPServerConfig(
-            name="calc",
-            command=sys.executable,
-            args=["src/agentic_patterns/mcp_servers/calculator.py"],
-        )
-    ])
-
-    await connector.connect_all()
-    tools = await connector.discover_tools()
-
-    assert any(t.name == "add" for t in tools)
-
-    result = await connector.call_tool("add", {"a": 2, "b": 3})
-    assert result == 5
-
-    await connector.disconnect_all()
-```
-
-### 6.3 Health Check Tests
-
-```python
-async def test_health_monitoring():
-    """Should track server health status."""
-    connector = UniversalConnector([
-        MCPServerConfig(name="healthy", command="cmd", args=[]),
-        MCPServerConfig(name="unhealthy", command="bad", args=[]),
-    ])
-
-    # Simulate connection states
-    connector._health["healthy"] = ServerHealth(
-        name="healthy", is_connected=True, tools_available=3
-    )
-    connector._health["unhealthy"] = ServerHealth(
-        name="unhealthy", is_connected=False, error_count=5
+    server = MCPServerStdio(
+        sys.executable,
+        args=['-m', 'agentic_patterns.mcp_servers.calculator'],
     )
 
-    state = connector.get_state()
-    assert state.servers[0].is_connected is True
-    assert state.servers[1].error_count == 5
+    agent = Agent(
+        'test',  # or real model
+        toolsets=[server],
+    )
+
+    async with agent:
+        # Agent should be able to call calculator tools
+        pass
 ```
 
-## 7. Edge Cases
+## 7. What's NOT Implemented
 
-1. **No servers configured:** Raise `ValueError` at construction
-2. **All servers fail to connect:** Raise `MCPConnectionError` with details
-3. **Tool not found:** Check all servers, raise `MCPToolNotFoundError`
-4. **Server dies mid-call:** Detect and attempt reconnection + fallback
-5. **Circular fallback:** Prevent infinite loops with attempt counter
+Documented decisions on what we're skipping:
+
+1. **Custom connector class:** pydantic-ai's `toolsets` is sufficient
+2. **Fallback routing:** If you need redundancy, use different patterns
+3. **Health monitoring:** MCP handles connection errors; let it
+4. **Server selection logic:** The LLM picks the right tool
+5. **Tool caching:** pydantic-ai handles this internally
 
 ## 8. Integration & Documentation
 
@@ -519,29 +430,34 @@ async def test_health_monitoring():
 - [ ] `if __name__ == "__main__"` demo block
 
 **Documentation:**
-- **Pattern page:** `docs/patterns/10-mcp-connector.md`
-- **Mermaid:** Sequence showing multi-server orchestration
-- **Example:** Agent with filesystem + database servers
-- **Comparison:** Table showing native vs connector capabilities
-- **Tutorial:** Building a custom MCP server
+- **Pattern page:** `docs/patterns/10-mcp-integration.md`
+- **Key insight:** pydantic-ai's native MCP support is complete
+- **When to use:** When agents need external tool access
+- **Example:** Calculator + filesystem multi-server agent
 
-## 9. Open Questions
+## 9. Skeptical Notes
 
-1. Should the connector auto-reconnect on server failure?
-2. How to handle conflicting tool names across servers?
-3. Should tool discovery be cached or always live?
-4. How to prioritize servers when multiple have the same tool?
+### Why the Original Spec Was Over-Engineered
 
-## 10. Review & Refinement Areas
+1. **"Server selection"** - The LLM already selects tools. No routing needed.
 
-### 10.1 Subprocess Lifecycle & Zombie Processes
-**Concern:** Improper management of subprocesses can lead to "zombie" processes if the main application crashes or is killed forcefully.
-**Refinement:** Implement robust signal handling (`SIGINT`, `SIGTERM`) and use `atexit` handlers or `weakref.finalize` to ensure all MCP subprocesses are terminated when the parent process exits.
+2. **"Automatic failover"** - If a server is down, that's an error. Don't hide
+   it with fallback magic. Fix the server.
 
-### 10.2 Schema Conversion Reliability
-**Concern:** Converting arbitrary JSON Schemas from MCP servers into Pydantic models (or compatible dicts) for `pydantic-ai` tool registration is non-trivial and error-prone.
-**Refinement:** Investigate using `datamodel-code-generator` or `pydantic.create_model` dynamically. Ensure fallback to "generic dict input" if precise schema conversion fails, though this reduces type safety.
+3. **"Health checks"** - MCP connections fail fast. You'll know if something
+   is wrong. Periodic pings add complexity for minimal value.
 
-### 10.3 Concurrency & Stream Deadlocks
-**Concern:** Managing multiple persistent `stdio` pipes (stdin/stdout) for multiple servers concurrently can lead to deadlocks if buffers fill up.
-**Refinement:** Ensure `asyncio.create_subprocess_exec` is used with non-blocking stream readers. The `mcp` SDK likely handles this, but we must verify that our `UniversalConnector` doesn't inadvertently block the event loop while waiting for a specific server.
+4. **"UniversalConnector class"** - This is just wrapping `toolsets=[...]`
+   with extra steps. The native API is cleaner.
+
+### When You Might Actually Need More
+
+- **True redundancy:** If you have multiple identical servers for load
+  balancing, consider infrastructure-level solutions (load balancer, not
+  agent code).
+
+- **Dynamic server discovery:** If servers come and go at runtime, you might
+  need custom logic. But this is rare for agent use cases.
+
+- **Complex routing:** If tool selection requires business logic beyond what
+  the LLM can decide, consider a routing pattern (Chapter 2) instead.
