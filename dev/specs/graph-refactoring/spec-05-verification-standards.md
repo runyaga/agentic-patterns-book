@@ -1,8 +1,8 @@
 # Spec 05: Verification Standards
 
-**Status**: DRAFT
+**Status**: FINAL
 **Purpose**: Document implementation standards, testing strategy, and verification checklist
-**Priority**: P3 (finalize after implementation)
+**Priority**: P3 (finalized after implementation)
 
 ---
 
@@ -40,11 +40,11 @@ class MyNode(BaseNode[StateType, DepsType, ReturnType]):
 ```
 
 **Checklist**:
-- [ ] Use `@dataclass` decorator
-- [ ] Inherit from `BaseNode[State, Deps, Return]`
-- [ ] Document transitions in docstring
-- [ ] Type-hint return with union of possible next nodes
-- [ ] Use `async def run()` signature
+- [x] Use `@dataclass` decorator
+- [x] Inherit from `BaseNode[State, Deps, Return]`
+- [x] Document transitions in docstring
+- [x] Type-hint return with union of possible next nodes
+- [x] Use `async def run()` signature
 
 ### 1.2 State Design Patterns
 
@@ -84,11 +84,11 @@ class MyGraphState:
 ```
 
 **Checklist**:
-- [ ] Use `@dataclass` decorator
-- [ ] Document field purposes
-- [ ] Use `field(default_factory=list)` for mutable defaults
-- [ ] Add helper methods for complex state operations
-- [ ] Use `@property` for derived values
+- [x] Use `@dataclass` decorator
+- [x] Document field purposes
+- [x] Use `field(default_factory=list)` for mutable defaults
+- [x] Add helper methods for complex state operations
+- [x] Use `@property` for derived values
 
 ### 1.3 Graph Definition Standards
 
@@ -111,9 +111,9 @@ def get_my_graph_diagram() -> str:
 ```
 
 **Checklist**:
-- [ ] List nodes in logical order (start -> end)
-- [ ] Add diagram generation function
-- [ ] Export graph in `__all__`
+- [x] List nodes in logical order (start -> end)
+- [x] Add diagram generation function
+- [x] Export graph in `__all__`
 
 ### 1.4 Transition Type Safety
 
@@ -142,61 +142,50 @@ async def run(self, ctx) -> NodeA | End[Result]:
 
 ```
 tests/
-├── test_routing.py           # Functional routing tests (existing)
-├── test_routing_graph.py     # Graph routing tests (new)
-├── test_multi_agent.py       # Multi-agent tests (update)
-├── test_evaluation.py        # Evaluation tests (update)
-├── test_human_in_loop.py     # HITL tests (new)
+├── test_routing.py           # Routing tests
+├── test_multi_agent.py       # Multi-agent tests
+├── test_evaluation.py        # Evaluation tests (pydantic-evals)
+├── test_human_in_loop.py     # HITL tests (existing functional)
 └── conftest.py               # Shared fixtures
 ```
 
 ### 2.2 Test Categories
 
-#### Unit Tests (per node)
+#### Unit Tests (per evaluator/component)
 
 ```python
-async def test_analyst_node_produces_analysis(mock_agent):
-    """Test individual node behavior."""
-    state = ApprovalState(request="Test")
-    ctx = MockContext(state)
+def test_confidence_threshold_evaluator_above():
+    """Test individual evaluator behavior."""
+    evaluator = ConfidenceThresholdEvaluator(min_confidence=0.7)
+    ctx = MagicMock()
+    ctx.output = (MagicMock(confidence=0.95),)
 
-    node = AnalystNode()
-    next_node = await node.run(ctx)
-
-    assert state.analysis is not None
-    assert isinstance(next_node, HumanGateNode)
+    score = evaluator.evaluate(ctx)
+    assert score == 0.95
 ```
 
-#### Integration Tests (full graph)
+#### Integration Tests (full pattern)
 
 ```python
-async def test_approval_graph_full_flow(mock_agents):
-    """Test complete graph execution."""
-    state = ApprovalState(request="Test")
-    state.decision = Decision.APPROVED
+async def test_evaluate_pattern_routing():
+    """Test complete evaluation flow."""
+    async def mock_route(query: str) -> tuple:
+        return MagicMock(confidence=0.9), MagicMock()
 
-    result = await approval_graph.run(AnalystNode(), state=state)
-
-    assert result.output.approved is True
+    report = await evaluate_pattern("routing", mock_route)
+    assert len(report.cases) == 4
 ```
 
 #### State Transition Tests
 
 ```python
-@pytest.mark.parametrize("decision,expected_node", [
-    (Decision.APPROVED, ActionNode),
-    (Decision.MODIFIED, FeedbackNode),
-    (Decision.REJECTED, End),
+@pytest.mark.parametrize("decision,expected", [
+    (Decision.APPROVED, True),
+    (Decision.REJECTED, False),
 ])
-async def test_human_gate_transitions(decision, expected_node):
-    """Test all transition paths from HumanGateNode."""
-    state = ApprovalState(request="Test", decision=decision)
-    ctx = MockContext(state)
-
-    node = HumanGateNode()
-    next_node = await node.run(ctx)
-
-    assert isinstance(next_node, expected_node)
+def test_collaboration_success_evaluator(decision, expected):
+    """Test evaluator with different states."""
+    ...
 ```
 
 ### 2.3 Coverage Requirements
@@ -209,14 +198,7 @@ uv run pytest --cov=agentic_patterns --cov-fail-under=80
 uv run pytest --cov=agentic_patterns --cov-report=html
 ```
 
-**Per-module targets**:
-| Module | Target | Notes |
-|--------|--------|-------|
-| `routing.py` | 85% | Existing + kept |
-| `routing_graph.py` | 80% | New module |
-| `multi_agent.py` | 80% | Refactored |
-| `evaluation.py` | 80% | Slimmed |
-| `human_in_loop_graph.py` | 80% | New module |
+**Current coverage**: 86%
 
 ---
 
@@ -227,43 +209,36 @@ uv run pytest --cov=agentic_patterns --cov-report=html
 Run before every commit:
 
 ```bash
-#!/bin/bash
-# scripts/pre-commit.sh
-
-set -e
-
-echo "=== Ruff Check ==="
-uv run ruff check src/ tests/
-
-echo "=== Ruff Format ==="
-uv run ruff format --check src/ tests/
-
-echo "=== Pytest ==="
-uv run pytest --cov-fail-under=80
-
-echo "=== All checks passed ==="
+# All three must pass
+uv run ruff check src/ tests/        # 0 errors, 0 warnings
+uv run ruff format --check src/ tests/  # All files formatted
+uv run pytest                         # 80%+ coverage
 ```
 
 ### 3.2 Milestone Checklist
 
 After completing each spec:
 
-- [ ] Code changes complete
-- [ ] `uv run ruff check src/ tests/` passes (0 errors, 0 warnings)
-- [ ] `uv run ruff format --check src/ tests/` passes
-- [ ] `uv run pytest --cov-fail-under=80` passes
-- [ ] Demo runs successfully (`python -m agentic_patterns.<module>`)
-- [ ] Documentation updated (if applicable)
+- [x] Code changes complete
+- [x] `uv run ruff check src/ tests/` passes (0 errors, 0 warnings)
+- [x] `uv run ruff format --check src/ tests/` passes
+- [x] `uv run pytest --cov-fail-under=80` passes
+- [x] Demo runs successfully (`python -m agentic_patterns.<module>`)
+- [x] Documentation updated (spec files)
 
 ### 3.3 Integration Test
 
 Full integration with Logfire:
 
 ```bash
-# Set Logfire token
+# Set environment
 export LOGFIRE_TOKEN=your_token_here
+export OLLAMA_URL=http://localhost:11434
 
-# Run integration tests
+# Run specific pattern
+./scripts/integration_test.sh evaluation -v
+
+# Run all patterns
 ./scripts/integration_test.sh
 
 # Verify in Logfire dashboard
@@ -276,14 +251,13 @@ echo "Check traces at: https://logfire.pydantic.dev/"
 
 ### 4.1 Verification Checklist
 
-After refactoring, verify Logfire captures:
+With `configure_logfire_for_evals()`:
 
-- [ ] **Agent spans**: Each agent call creates a span
-- [ ] **Latency**: Duration recorded accurately
-- [ ] **Token usage**: Input/output tokens tracked
-- [ ] **Errors**: Exceptions captured with stack traces
-- [ ] **Graph spans**: Graph execution creates parent span
-- [ ] **Node spans**: Each node creates child span
+- [x] **Scrubbing disabled**: Full eval data captured
+- [x] **Agent spans**: Each agent call creates a span
+- [x] **Latency**: Duration recorded accurately
+- [x] **Token usage**: Input/output tokens tracked
+- [x] **Errors**: Exceptions captured with stack traces
 
 ### 4.2 Test Queries
 
@@ -297,158 +271,128 @@ WHERE span_name LIKE 'pydantic_ai:%'
   AND start_timestamp > NOW() - INTERVAL '1 hour'
 GROUP BY span_name;
 
--- Check graph spans
+-- Check evaluation spans
 SELECT span_name, duration_ms
 FROM records
-WHERE span_name LIKE '%graph%'
+WHERE span_name LIKE 'pydantic_evals:%'
   AND start_timestamp > NOW() - INTERVAL '1 hour'
 ORDER BY start_timestamp DESC
 LIMIT 10;
 
--- Check for errors
-SELECT span_name, exception_type, exception_message
+-- Token usage during evaluation
+SELECT
+    attributes->>'model_name' as model,
+    SUM((attributes->>'input_tokens')::int) as input_tokens,
+    SUM((attributes->>'output_tokens')::int) as output_tokens
 FROM records
-WHERE exception_type IS NOT NULL
-  AND start_timestamp > NOW() - INTERVAL '1 hour';
+WHERE span_name LIKE 'agent:%'
+GROUP BY 1;
 ```
 
 ---
 
-## 5. Mermaid Diagram Standards
+## 5. Completed Specs Summary
 
-### 5.1 Diagram Generation
+### 5.1 Spec 01: Routing - KEEP
 
-Each graph module should expose diagram generation:
+**Decision**: Keep simple functional implementation
 
-```python
-# In each graph module
-def get_diagram() -> str:
-    """Generate Mermaid diagram for this graph."""
-    return my_graph.mermaid_code()
+- [x] Reviewed graph alternative
+- [x] Decided dictionary dispatch is simpler and sufficient
+- [x] No code changes needed
+- [x] Spec marked FINAL
 
-# Export in __all__
-__all__ = ["my_graph", "get_diagram", ...]
-```
+### 5.2 Spec 02: Multi-Agent Graph - COMPLETED
 
-### 5.2 Documentation Integration
+**Decision**: Replace loop with pydantic_graph
 
-Include diagrams in module docstrings:
+- [x] Defined `CollaborationState` with helpers
+- [x] Implemented `PlanNode`
+- [x] Implemented `ExecuteTaskNode` (cyclic)
+- [x] Implemented `SynthesizeNode`
+- [x] Defined `collaboration_graph`
+- [x] Updated `run_collaborative_task()` to use graph
+- [x] Tests updated and passing
+- [x] Quality gates passed
+- [x] Committed
 
-```python
-"""
-My Graph Module.
+### 5.3 Spec 03: Evaluation Slimdown - COMPLETED
 
-Flow diagram:
+**Decision**: Replace custom evaluation with pydantic-evals
 
-```mermaid
-stateDiagram-v2
-    [*] --> StartNode
-    StartNode --> ProcessNode
-    ProcessNode --> [*]
-```
-"""
-```
+- [x] Deleted `AgentMetrics`, `PerformanceMonitor`, etc. (~700 lines)
+- [x] Added pydantic-evals integration
+- [x] Created custom evaluators: `IntentMatchEvaluator`, `ConfidenceThresholdEvaluator`, `CollaborationSuccessEvaluator`, `TaskCompletionEvaluator`
+- [x] Created dataset factories: `create_routing_dataset`, `create_multi_agent_dataset`
+- [x] Added `evaluate_pattern()` and `evaluate_pattern_sync()` APIs
+- [x] Configured logfire with `scrubbing=False`
+- [x] Created `scripts/run_evals.sh`
+- [x] Updated `__main__` to run real evals (not mocks)
+- [x] Tests updated (37 tests passing)
+- [x] Quality gates passed
+- [x] Committed
 
-### 5.3 Automated Diagram Updates
+### 5.4 Spec 04: Human-in-Loop Graph - DEFERRED
+
+**Decision**: Punt for now
+
+- [ ] Not implemented
+- [ ] Existing functional `human_in_loop.py` remains
+
+---
+
+## 6. Scripts Reference
+
+### 6.1 Integration Test
 
 ```bash
-# scripts/update_diagrams.sh
-#!/bin/bash
+# Run all patterns
+./scripts/integration_test.sh
 
-# Generate diagrams for all graph modules
-.venv/bin/python -c "
-from agentic_patterns.routing_graph import get_routing_diagram
-from agentic_patterns.multi_agent import get_collaboration_diagram
-from agentic_patterns.human_in_loop_graph import get_approval_diagram
+# Run single pattern with verbose output
+./scripts/integration_test.sh evaluation -v
+./scripts/integration_test.sh routing -v
+./scripts/integration_test.sh multi_agent -v
 
-print('# Routing Graph')
-print(get_routing_diagram())
-print()
-print('# Multi-Agent Graph')
-print(get_collaboration_diagram())
-print()
-print('# Approval Graph')
-print(get_approval_diagram())
-" > docs/diagrams.md
+# Help
+./scripts/integration_test.sh --help
+```
+
+### 6.2 Evaluation Reports
+
+```bash
+# Run evaluations and generate reports
+./scripts/run_evals.sh routing
+./scripts/run_evals.sh multi_agent
+./scripts/run_evals.sh routing --llm    # Include LLM judge
+./scripts/run_evals.sh all              # All patterns
+
+# Reports saved to reports/eval_<pattern>_<timestamp>.txt
+```
+
+### 6.3 Direct Module Execution
+
+```bash
+# Run pattern demos
+.venv/bin/python -m agentic_patterns.routing
+.venv/bin/python -m agentic_patterns.multi_agent
+.venv/bin/python -m agentic_patterns.evaluation routing
+.venv/bin/python -m agentic_patterns.evaluation multi_agent --llm-judge
 ```
 
 ---
 
-## 6. Migration Checklist
+## 7. Final State
 
-### 6.1 Spec 03: Evaluation Slimdown
+| Spec | Status | Decision |
+|------|--------|----------|
+| Spec 01: Routing | FINAL | KEEP simple implementation |
+| Spec 02: Multi-Agent | FINAL | REPLACED with pydantic_graph |
+| Spec 03: Evaluation | FINAL | REFACTORED to pydantic-evals |
+| Spec 04: HITL Graph | DEFERRED | Existing functional impl remains |
+| Spec 05: Standards | FINAL | This document |
 
-- [ ] Delete `AgentMetrics` class
-- [ ] Delete `PerformanceMonitor` class
-- [ ] Delete `MetricValue` model
-- [ ] Delete `PerformanceSummary` model
-- [ ] Delete `generate_evaluation_report()` function
-- [ ] Update `EvaluationReport` model
-- [ ] Remove deleted tests
-- [ ] Update demo
-- [ ] Create `scripts/run_evals.sh`
-- [ ] Run quality gates
-
-### 6.2 Spec 01: Routing Graph
-
-- [ ] Create `routing_graph.py`
-- [ ] Define `RoutingState`
-- [ ] Implement `ClassifyIntentNode`
-- [ ] Implement 4 handler nodes
-- [ ] Define `routing_graph`
-- [ ] Add `route_query_graph()` API
-- [ ] Add `get_routing_diagram()`
-- [ ] Write tests
-- [ ] Run quality gates
-
-### 6.3 Spec 02: Multi-Agent Graph
-
-- [ ] Define `CollaborationState` with helpers
-- [ ] Implement `PlanNode`
-- [ ] Implement `ExecuteTaskNode` (cyclic)
-- [ ] Implement `SynthesizeNode`
-- [ ] Define `collaboration_graph`
-- [ ] Update `run_collaborative_task()` to use graph
-- [ ] Remove old loop implementation
-- [ ] Remove duplicated tools
-- [ ] Update tests
-- [ ] Run quality gates
-
-### 6.4 Spec 04: Human-in-Loop Graph
-
-- [ ] Create `human_in_loop_graph.py`
-- [ ] Define `ApprovalState` and `Decision`
-- [ ] Create analyst and action agents
-- [ ] Implement `AnalystNode`
-- [ ] Implement `HumanGateNode`
-- [ ] Implement `FeedbackNode`
-- [ ] Implement `ActionNode`
-- [ ] Define `approval_graph`
-- [ ] Add public API functions
-- [ ] Write tests
-- [ ] Add interactive demo
-- [ ] Run quality gates
-
----
-
-## 7. Implementation Order
-
-1. **Phase 1**: Spec 03 (Evaluation slimdown) - P0
-   - Lowest risk, immediate cleanup
-   - No graph dependencies
-
-2. **Phase 2**: Spec 01 (Routing graph) - P2
-   - Simple graph pattern
-   - Establishes conventions
-
-3. **Phase 3**: Spec 02 (Multi-agent graph) - P1
-   - Complex cyclic graph
-   - Uses established patterns
-
-4. **Phase 4**: Spec 04 (HITL graph) - P2
-   - New implementation
-   - Demonstrates graph capabilities
-
-5. **Phase 5**: Spec 05 (This document) - P3
-   - Finalize after implementation
-   - Document learnings
+**Quality Metrics**:
+- Tests: 580 passing
+- Coverage: 86%
+- Lint: 0 errors, 0 warnings

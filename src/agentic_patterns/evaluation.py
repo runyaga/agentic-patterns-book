@@ -366,45 +366,83 @@ __all__ = [
 
 
 if __name__ == "__main__":
+    import argparse
     import asyncio
 
-    async def demo() -> None:
-        """Demonstrate evaluation capabilities."""
+    from agentic_patterns.multi_agent import run_collaborative_task
+    from agentic_patterns.routing import route_query
+
+    PATTERN_FUNCTIONS = {
+        "routing": route_query,
+        "multi_agent": run_collaborative_task,
+    }
+
+    async def run_eval(pattern: str, include_llm_judge: bool = False) -> None:
+        """Run evaluation for a pattern."""
         print("=" * 60)
-        print("Evaluation Demo with pydantic-evals")
+        print(f"Evaluation: {pattern}")
         print("=" * 60)
 
         # Configure logfire
         configure_logfire_for_evals()
 
-        # Create a mock routing function for demo
-        async def mock_route_query(query: str) -> tuple:
-            from pydantic import BaseModel
+        if pattern not in PATTERN_FUNCTIONS:
+            print(f"Unknown pattern: {pattern}")
+            print(f"Available: {list(PATTERN_FUNCTIONS.keys())}")
+            return
 
-            class MockDecision(BaseModel):
-                intent: str = "order_status"
-                confidence: float = 0.95
-                reasoning: str = "User asked about order"
+        task_fn = PATTERN_FUNCTIONS[pattern]
+        print(f"Function: {task_fn.__name__}")
+        print(f"LLM Judge: {include_llm_judge}")
+        print()
 
-            class MockResponse(BaseModel):
-                message: str = "Your order is on the way"
-
-            return MockDecision(), MockResponse()
-
-        # Run evaluation
-        print("\n--- Routing Pattern Evaluation ---")
         report = await evaluate_pattern(
-            "routing",
-            mock_route_query,
-            metadata={"model": "mock", "version": "demo"},
+            pattern,
+            task_fn,
+            include_llm_judge=include_llm_judge,
+            metadata={"pattern": pattern},
         )
 
-        report.print(include_input=True, include_output=True)
+        report.print(
+            include_input=True,
+            include_output=True,
+            include_durations=True,
+        )
 
-        print("\n--- Programmatic Access ---")
-        for case in report.cases:
-            print(f"Case: {case.name}")
-            print(f"  Scores: {case.scores}")
-            print(f"  Assertions: {case.assertions}")
+        print()
+        print("=" * 60)
+        print("Summary")
+        print("=" * 60)
+        total_cases = len(report.cases)
+        print(f"Total cases: {total_cases}")
 
-    asyncio.run(demo())
+        # Count assertions passed
+        passed = sum(
+            1
+            for case in report.cases
+            for a in case.assertions.values()
+            if a.value is True
+        )
+        total_assertions = sum(len(case.assertions) for case in report.cases)
+        if total_assertions > 0:
+            print(f"Assertions: {passed}/{total_assertions} passed")
+
+        print()
+        print("Logfire Dashboard: https://logfire.pydantic.dev/")
+
+    parser = argparse.ArgumentParser(description="Run pattern evaluations")
+    parser.add_argument(
+        "pattern",
+        nargs="?",
+        default="routing",
+        choices=list(PATTERN_FUNCTIONS.keys()),
+        help="Pattern to evaluate (default: routing)",
+    )
+    parser.add_argument(
+        "--llm-judge",
+        action="store_true",
+        help="Include LLM-as-judge evaluation",
+    )
+    args = parser.parse_args()
+
+    asyncio.run(run_eval(args.pattern, args.llm_judge))
