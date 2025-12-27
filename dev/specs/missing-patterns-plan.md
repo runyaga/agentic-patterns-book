@@ -75,7 +75,7 @@ Every pattern spec MUST include a **Test Strategy** section covering:
 
 ### Phase 1: Robustness
 
-**Chapter 12: Phoenix Protocol (Exception Handling)**
+**Chapter 12: Phoenix Protocol (Exception Handling)** - **DONE**
 - *Purpose:* Recovery from exceptions *outside* normal agent flow
 - *Distinction:* `ModelRetry` handles semantic failures during generation; Phoenix handles Python exceptions, tool crashes, context overflow
 - *Graph:* No (wrapper function pattern)
@@ -83,7 +83,7 @@ Every pattern spec MUST include a **Test Strategy** section covering:
 
 ### Phase 2: Extensibility
 
-**Chapter 10: Universal Connector (MCP)**
+**Chapter 10: Universal Connector (MCP)** - **DONE**
 - *Purpose:* Demonstrate MCP integration patterns beyond basic `toolsets=[server]`
 - *Novel Value:* Multi-server orchestration, server selection, fallback handling
 - *Graph:* No (connection management, not workflow)
