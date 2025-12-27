@@ -1,301 +1,150 @@
-# Specification: The Teleological Engine (Goal Setting)
+# Specification: Goal Monitoring (Teleological Engine)
 
 **Chapter:** 11
-**Pattern Name:** The Teleological Engine
-**Status:** Draft v2
+**Pattern Name:** Goal Monitoring
+**Status:** V1 Lean
 **Module:** `src/agentic_patterns/goal_monitoring.py`
 
 ## 1. Overview
 
-Most agents are "reactive"—they wait for a user prompt to act. The
-**Teleological Engine** (from the Greek *telos*, meaning goal) makes agents
-"proactive." It implements an OKR-style framework where the agent maintains
-persistent goals and monitors the environment to ensure they are met.
+Most agents are reactive - they wait for prompts. **Goal Monitoring** makes
+agents proactive: they continuously check if goals are met and attempt
+remediation when gaps are detected.
 
-### 1.1 Why pydantic_graph
+This V1 is intentionally lean. Production enhancements are documented in
+Section 8.
 
-The monitoring loop is a cyclic state machine:
-```
-Monitor → Check KRs → (Gap?) → Remediate → Monitor
-```
+## 2. V1 Scope
 
-Using `pydantic_graph` stable API provides:
-- Typed state transitions
-- Mermaid visualization for debugging
-- Explicit cycle handling via self-returning nodes
-- Clean separation of concerns per node
+**Included:**
+- 3-node pydantic_graph cycle (Wait → Check → Remediate)
+- Simple `Goal` dataclass with async evaluator callable
+- `GoalMonitor` class with start/stop lifecycle
+- Remediation agent that attempts to fix gaps
+- Stub `on_escalate()` for production integration
 
-**Alternative considered:** Raw `while True` with `asyncio.sleep()`. Rejected
-because it lacks structure, makes testing harder, and doesn't integrate with
-pydantic_graph's visualization.
+**Not included (see Production TODOs):**
+- Persistence (P2)
+- Advanced evaluators (P3)
+- OKR hierarchy (P4)
+- Logfire observability (P5)
 
-## 2. Architecture
+## 3. Architecture
 
-### 2.1 State Machine
+### 3.1 State Machine
 
 ```mermaid
 stateDiagram-v2
-    [*] --> MonitorNode: Start monitoring
+    [*] --> WaitNode: Start monitoring
 
-    MonitorNode --> CheckNode: interval elapsed
-    MonitorNode --> [*]: shutdown requested
+    WaitNode --> CheckNode: interval elapsed
+    WaitNode --> [*]: shutdown requested
 
-    CheckNode --> MonitorNode: all KRs met
+    CheckNode --> WaitNode: all goals met
     CheckNode --> RemediateNode: gap detected
 
-    RemediateNode --> MonitorNode: remediation complete
-    RemediateNode --> EscalateNode: remediation failed
-
-    EscalateNode --> MonitorNode: escalation handled
-    EscalateNode --> [*]: critical failure
+    RemediateNode --> CheckNode: retry check
 ```
 
-### 2.2 Data Models
+### 3.2 Data Models
 
 ```python
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Literal, Any, Callable, Awaitable
-from pydantic import BaseModel, Field
-
-
-class KeyResult(BaseModel):
-    """A measurable key result for an objective."""
-    id: str = Field(description="Unique KR identifier")
-    metric_name: str = Field(description="What is being measured")
-    target_value: float = Field(description="Target threshold")
-    current_value: float | None = Field(
-        default=None,
-        description="Last measured value"
-    )
-    comparator: Literal[">=", "<=", "==", ">", "<"] = Field(
-        default=">=",
-        description="How to compare current vs target"
-    )
-    evaluator_type: Literal[
-        "python_callable",
-        "file_stat",
-        "agent_assessment"
-    ] = Field(
-        default="python_callable",
-        description="How to evaluate current value"
-    )
-    evaluator_config: dict[str, Any] = Field(
-        default_factory=dict,
-        description="Config for the evaluator"
-    )
-    last_checked: datetime | None = None
-    is_met: bool = False
-
-
-class GoalObjective(BaseModel):
-    """A high-level objective with key results."""
-    id: str = Field(description="Unique objective identifier")
-    description: str = Field(description="Human-readable goal")
-    key_results: list[KeyResult] = Field(description="Measurable KRs")
-    priority: int = Field(
-        default=1, ge=1, le=10,
-        description="1=highest priority, 10=lowest"
-    )
-    remediation_prompt: str = Field(
-        description="Instructions for the remediation agent"
-    )
-    remediation_retries: int = Field(
-        default=2,
-        description="Max remediation attempts per check"
-    )
-    enabled: bool = True
-
-
-class GapReport(BaseModel):
-    """Report of a detected goal gap."""
-    objective_id: str
-    failed_krs: list[KeyResult]
-    gap_severity: Literal["minor", "moderate", "critical"]
-    suggested_action: str
-
-
-class RemediationResult(BaseModel):
-    """Result of a remediation attempt."""
-    objective_id: str
-    success: bool
-    action_taken: str
-    error_message: str | None = None
-    duration_seconds: float
+from typing import Callable, Awaitable, Literal
 
 
 @dataclass
-class GoalMonitorState:
-    """State for the goal monitoring graph."""
-    objectives: list[GoalObjective]
-    check_interval_seconds: float = 60.0
-    shutdown_requested: bool = False
+class Goal:
+    """A single monitorable goal."""
 
-    # Mutable accumulators
-    current_objective_index: int = 0
-    current_gap: GapReport | None = None
-    remediation_attempts: int = 0
-    remediation_history: list[RemediationResult] = field(default_factory=list)
-    last_check_time: datetime | None = None
-
-    def next_objective(self) -> GoalObjective | None:
-        """Get next objective to check, or None if done with cycle."""
-        enabled = [o for o in self.objectives if o.enabled]
-        if self.current_objective_index >= len(enabled):
-            self.current_objective_index = 0
-            return None
-        obj = enabled[self.current_objective_index]
-        self.current_objective_index += 1
-        return obj
-
-    def reset_cycle(self) -> None:
-        """Reset for next monitoring cycle."""
-        self.current_objective_index = 0
-        self.current_gap = None
-        self.remediation_attempts = 0
+    name: str
+    target: float
+    evaluator: Callable[[], Awaitable[float]]
+    comparator: Literal[">=", "<=", "==", ">", "<"] = ">="
+    remediation_hint: str = ""
 
 
 @dataclass
-class GoalMonitorDeps:
-    """Dependencies for goal monitoring agents."""
-    evaluators: dict[str, Callable[..., Awaitable[float]]]
-    on_gap_detected: Callable[[GapReport], Awaitable[None]] | None = None
-    on_remediation: Callable[[RemediationResult], Awaitable[None]] | None = None
+class GoalStatus:
+    """Result of checking a goal."""
+
+    goal_name: str
+    current_value: float
+    target_value: float
+    is_met: bool
+    checked_at: datetime
+
+
+@dataclass
+class MonitorState:
+    """Graph state for goal monitoring."""
+
+    goals: list[Goal]
+    check_interval: float = 60.0
+    shutdown: bool = False
+    current_gap: Goal | None = None
+    last_status: list[GoalStatus] = field(default_factory=list)
 ```
 
-### 2.3 Evaluators
-
-```python
-from pathlib import Path
-import os
-from datetime import datetime, timedelta
-
-
-async def file_age_evaluator(path: str, unit: str = "hours") -> float:
-    """Evaluate file age in specified units."""
-    stat = Path(path).stat()
-    age = datetime.now().timestamp() - stat.st_mtime
-    divisors = {"seconds": 1, "minutes": 60, "hours": 3600, "days": 86400}
-    return age / divisors.get(unit, 1)
-
-
-async def file_exists_evaluator(path: str) -> float:
-    """Return 1.0 if file exists, 0.0 otherwise."""
-    return 1.0 if Path(path).exists() else 0.0
-
-
-async def coverage_evaluator(report_path: str) -> float:
-    """Parse coverage report and return percentage."""
-    # Parse .coverage or coverage.xml
-    ...
-
-
-async def agent_assessment_evaluator(
-    agent: Agent,
-    prompt: str,
-    deps: Any = None,
-) -> float:
-    """Use an agent to assess a metric (returns 0.0-1.0)."""
-    result = await agent.run(prompt, deps=deps)
-    return result.output.score  # Assumes agent returns scored output
-```
-
-### 2.4 Graph Nodes
+### 3.3 Graph Nodes
 
 ```python
 from pydantic_graph import BaseNode, End, Graph, GraphRunContext
-from pydantic_ai import Agent
-from agentic_patterns._models import get_model
-
-model = get_model()
-
-
-# Remediation agent
-remediation_agent = Agent(
-    model,
-    system_prompt=(
-        "You are a maintenance agent. Given a goal gap, take action to "
-        "fix the issue. Be specific about what you did."
-    ),
-    output_type=RemediationResult,
-    deps_type=GoalMonitorDeps,
-)
+import asyncio
+from datetime import datetime
 
 
 @dataclass
-class MonitorNode(BaseNode[GoalMonitorState, GoalMonitorDeps, None]):
+class WaitNode(BaseNode[MonitorState, None, None]):
     """Wait for next check interval."""
 
     async def run(
         self,
-        ctx: GraphRunContext[GoalMonitorState, GoalMonitorDeps],
+        ctx: GraphRunContext[MonitorState],
     ) -> "CheckNode" | End[None]:
-        if ctx.state.shutdown_requested:
+        if ctx.state.shutdown:
             return End(None)
 
-        # Wait for interval
-        await asyncio.sleep(ctx.state.check_interval_seconds)
-        ctx.state.last_check_time = datetime.now()
-        ctx.state.reset_cycle()
-
+        await asyncio.sleep(ctx.state.check_interval)
         return CheckNode()
 
 
 @dataclass
-class CheckNode(BaseNode[GoalMonitorState, GoalMonitorDeps, None]):
-    """Check key results for current objective."""
+class CheckNode(BaseNode[MonitorState, None, None]):
+    """Evaluate all goals."""
 
     async def run(
         self,
-        ctx: GraphRunContext[GoalMonitorState, GoalMonitorDeps],
-    ) -> MonitorNode | "RemediateNode" | "CheckNode":
-        objective = ctx.state.next_objective()
+        ctx: GraphRunContext[MonitorState],
+    ) -> WaitNode | "RemediateNode":
+        state = ctx.state
+        state.last_status = []
 
-        if objective is None:
-            # All objectives checked, back to monitoring
-            return MonitorNode()
+        for goal in state.goals:
+            current = await goal.evaluator()
+            is_met = self._check_met(current, goal.target, goal.comparator)
 
-        # Evaluate all KRs
-        failed_krs = []
-        for kr in objective.key_results:
-            current = await self._evaluate_kr(kr, ctx.deps)
-            kr.current_value = current
-            kr.last_checked = datetime.now()
-            kr.is_met = self._check_met(kr)
+            state.last_status.append(GoalStatus(
+                goal_name=goal.name,
+                current_value=current,
+                target_value=goal.target,
+                is_met=is_met,
+                checked_at=datetime.now(),
+            ))
 
-            if not kr.is_met:
-                failed_krs.append(kr)
+            if not is_met:
+                state.current_gap = goal
+                return RemediateNode()
 
-        if failed_krs:
-            ctx.state.current_gap = GapReport(
-                objective_id=objective.id,
-                failed_krs=failed_krs,
-                gap_severity=self._assess_severity(failed_krs),
-                suggested_action=objective.remediation_prompt,
-            )
-            if ctx.deps.on_gap_detected:
-                await ctx.deps.on_gap_detected(ctx.state.current_gap)
-            return RemediateNode()
+        return WaitNode()
 
-        # This objective is fine, check next
-        return CheckNode()
-
-    async def _evaluate_kr(
+    def _check_met(
         self,
-        kr: KeyResult,
-        deps: GoalMonitorDeps,
-    ) -> float:
-        if kr.evaluator_type == "python_callable":
-            fn = deps.evaluators.get(kr.evaluator_config.get("function"))
-            if fn:
-                return await fn(**kr.evaluator_config.get("args", {}))
-        elif kr.evaluator_type == "file_stat":
-            return await file_age_evaluator(**kr.evaluator_config)
-        return 0.0
-
-    def _check_met(self, kr: KeyResult) -> bool:
-        if kr.current_value is None:
-            return False
+        current: float,
+        target: float,
+        comparator: str,
+    ) -> bool:
         ops = {
             ">=": lambda c, t: c >= t,
             "<=": lambda c, t: c <= t,
@@ -303,426 +152,380 @@ class CheckNode(BaseNode[GoalMonitorState, GoalMonitorDeps, None]):
             ">": lambda c, t: c > t,
             "<": lambda c, t: c < t,
         }
-        return ops[kr.comparator](kr.current_value, kr.target_value)
-
-    def _assess_severity(self, failed_krs: list[KeyResult]) -> str:
-        # Simple heuristic based on how far from target
-        gaps = []
-        for kr in failed_krs:
-            if kr.current_value and kr.target_value:
-                gap = abs(kr.current_value - kr.target_value) / kr.target_value
-                gaps.append(gap)
-        avg_gap = sum(gaps) / len(gaps) if gaps else 0
-        if avg_gap > 0.5:
-            return "critical"
-        elif avg_gap > 0.2:
-            return "moderate"
-        return "minor"
+        return ops[comparator](current, target)
 
 
 @dataclass
-class RemediateNode(BaseNode[GoalMonitorState, GoalMonitorDeps, None]):
-    """Attempt to remediate a detected gap."""
+class RemediateNode(BaseNode[MonitorState, None, None]):
+    """Attempt to fix a detected gap."""
 
     async def run(
         self,
-        ctx: GraphRunContext[GoalMonitorState, GoalMonitorDeps],
-    ) -> MonitorNode | "EscalateNode" | CheckNode:
-        gap = ctx.state.current_gap
-        if not gap:
+        ctx: GraphRunContext[MonitorState],
+    ) -> CheckNode:
+        goal = ctx.state.current_gap
+        if goal is None:
             return CheckNode()
 
-        objective = next(
-            (o for o in ctx.state.objectives if o.id == gap.objective_id),
-            None
+        # Call remediation agent
+        result = await remediation_agent.run(
+            f"Goal '{goal.name}' is not met.\n"
+            f"Hint: {goal.remediation_hint}\n"
+            f"Take action to fix this."
         )
-        if not objective:
-            return CheckNode()
 
-        ctx.state.remediation_attempts += 1
+        if not result.output.success:
+            # Escalate via stub (production: integrate alerting)
+            await on_escalate(goal, result.output.error or "Remediation failed")
 
-        # Run remediation agent
-        try:
-            result = await remediation_agent.run(
-                f"Fix this gap:\n{gap.suggested_action}\n\n"
-                f"Failed metrics: {[kr.metric_name for kr in gap.failed_krs]}",
-                deps=ctx.deps,
-            )
-            remediation = result.output
-            ctx.state.remediation_history.append(remediation)
-
-            if ctx.deps.on_remediation:
-                await ctx.deps.on_remediation(remediation)
-
-            if remediation.success:
-                ctx.state.current_gap = None
-                return CheckNode()  # Re-check
-
-        except Exception as e:
-            remediation = RemediationResult(
-                objective_id=gap.objective_id,
-                success=False,
-                action_taken="",
-                error_message=str(e),
-                duration_seconds=0,
-            )
-            ctx.state.remediation_history.append(remediation)
-
-        # Check if we should escalate
-        if ctx.state.remediation_attempts >= objective.remediation_retries:
-            return EscalateNode()
-
-        return RemediateNode()  # Retry
-
-
-@dataclass
-class EscalateNode(BaseNode[GoalMonitorState, GoalMonitorDeps, None]):
-    """Handle failed remediation (log, alert, or shutdown)."""
-
-    async def run(
-        self,
-        ctx: GraphRunContext[GoalMonitorState, GoalMonitorDeps],
-    ) -> MonitorNode | End[None]:
-        gap = ctx.state.current_gap
-        if gap and gap.gap_severity == "critical":
-            # Critical failure - shutdown
-            print(f"CRITICAL: Unable to remediate {gap.objective_id}")
-            return End(None)
-
-        # Non-critical - log and continue
-        print(f"WARN: Remediation failed for {gap.objective_id if gap else 'unknown'}")
         ctx.state.current_gap = None
-        return MonitorNode()
+        return CheckNode()
 
 
-# Define the graph
-goal_monitor_graph: Graph[GoalMonitorState, GoalMonitorDeps, None] = Graph(
-    nodes=[MonitorNode, CheckNode, RemediateNode, EscalateNode],
+# Graph definition
+goal_monitor_graph: Graph[MonitorState, None, None] = Graph(
+    nodes=[WaitNode, CheckNode, RemediateNode],
 )
 ```
 
-### 2.5 Entry Point
+### 3.4 Remediation Agent
 
 ```python
-import asyncio
-from contextlib import asynccontextmanager
+from pydantic import BaseModel, Field
+from pydantic_ai import Agent
+from agentic_patterns._models import get_model
 
 
+class RemediationResult(BaseModel):
+    """Result of a remediation attempt."""
+
+    success: bool
+    action_taken: str = Field(description="What was done to fix the gap")
+    error: str | None = None
+
+
+model = get_model()
+
+remediation_agent = Agent(
+    model,
+    system_prompt=(
+        "You are a maintenance agent. When a goal is not met, "
+        "take action to fix it. Describe what you did."
+    ),
+    output_type=RemediationResult,
+)
+```
+
+### 3.5 Escalation Stub
+
+```python
+async def on_escalate(goal: Goal, error: str) -> None:
+    """
+    Stub for escalation handling.
+
+    Production TODO (P1): Integrate with alerting system.
+
+    Args:
+        goal: The goal that failed remediation.
+        error: Error message from remediation attempt.
+    """
+    print(f"ESCALATE: Goal '{goal.name}' - {error}")
+```
+
+### 3.6 Entry Point
+
+```python
 class GoalMonitor:
     """
     Manages goal monitoring lifecycle.
 
-    Wraps the pydantic_graph execution with start/stop control.
+    Example:
+        monitor = GoalMonitor(goals=[...], check_interval=60.0)
+        await monitor.start()
+        # ... later
+        await monitor.stop()
     """
 
     def __init__(
         self,
-        objectives: list[GoalObjective],
+        goals: list[Goal],
         check_interval: float = 60.0,
-        deps: GoalMonitorDeps | None = None,
     ):
-        self.objectives = objectives
+        self.goals = goals
         self.check_interval = check_interval
-        self.deps = deps or GoalMonitorDeps(evaluators={})
         self._task: asyncio.Task | None = None
-        self._state: GoalMonitorState | None = None
+        self._state: MonitorState | None = None
 
     async def start(self) -> None:
         """Start the monitoring loop."""
-        self._state = GoalMonitorState(
-            objectives=self.objectives,
-            check_interval_seconds=self.check_interval,
+        self._state = MonitorState(
+            goals=self.goals,
+            check_interval=self.check_interval,
         )
         self._task = asyncio.create_task(self._run())
 
     async def stop(self) -> None:
         """Stop the monitoring loop gracefully."""
         if self._state:
-            self._state.shutdown_requested = True
+            self._state.shutdown = True
         if self._task:
             await self._task
 
     async def _run(self) -> None:
-        """Run the graph to completion."""
-        await goal_monitor_graph.run(
-            MonitorNode(),
-            state=self._state,
-            deps=self.deps,
-        )
+        """Run the graph."""
+        await goal_monitor_graph.run(WaitNode(), state=self._state)
 
-    def get_state(self) -> GoalMonitorState | None:
-        """Get current monitoring state."""
-        return self._state
-
-    @asynccontextmanager
-    async def running(self):
-        """Context manager for automatic start/stop."""
-        await self.start()
-        try:
-            yield self
-        finally:
-            await self.stop()
+    def get_status(self) -> list[GoalStatus]:
+        """Get last check results."""
+        return self._state.last_status if self._state else []
 
 
 async def run_goal_monitor(
-    objectives: list[GoalObjective],
+    goals: list[Goal],
     check_interval: float = 60.0,
-    deps: GoalMonitorDeps | None = None,
 ) -> None:
     """
-    Run goal monitoring until shutdown.
+    Run goal monitoring until interrupted.
 
     Args:
-        objectives: Goals to monitor.
+        goals: Goals to monitor.
         check_interval: Seconds between checks.
-        deps: Optional dependencies with evaluators.
-
-    Example:
-        await run_goal_monitor(
-            objectives=[
-                GoalObjective(
-                    id="docs-fresh",
-                    description="Keep docs up to date",
-                    key_results=[
-                        KeyResult(
-                            id="readme-age",
-                            metric_name="README.md age",
-                            target_value=24.0,
-                            comparator="<=",
-                            evaluator_type="file_stat",
-                            evaluator_config={"path": "README.md", "unit": "hours"},
-                        )
-                    ],
-                    remediation_prompt="Update the README with recent changes",
-                )
-            ],
-            check_interval=300.0,  # 5 minutes
-        )
     """
-    monitor = GoalMonitor(objectives, check_interval, deps)
-    async with monitor.running():
-        # Run until interrupted
-        while not monitor._state.shutdown_requested:
+    monitor = GoalMonitor(goals, check_interval)
+    await monitor.start()
+    try:
+        while not monitor._state.shutdown:
             await asyncio.sleep(1)
+    finally:
+        await monitor.stop()
 ```
 
-## 3. Idiomatic Feature Table
+## 4. Example Usage
+
+```python
+import asyncio
+
+# Define evaluator functions
+async def get_disk_usage() -> float:
+    """Return disk usage percentage."""
+    import shutil
+    usage = shutil.disk_usage("/")
+    return (usage.used / usage.total) * 100
+
+async def get_memory_usage() -> float:
+    """Return memory usage percentage."""
+    import psutil
+    return psutil.virtual_memory().percent
+
+# Define goals
+goals = [
+    Goal(
+        name="disk_space",
+        target=80.0,
+        comparator="<=",
+        evaluator=get_disk_usage,
+        remediation_hint="Clean up temp files and old logs",
+    ),
+    Goal(
+        name="memory",
+        target=90.0,
+        comparator="<=",
+        evaluator=get_memory_usage,
+        remediation_hint="Restart memory-heavy services",
+    ),
+]
+
+# Run monitor
+async def main():
+    monitor = GoalMonitor(goals, check_interval=300.0)
+    await monitor.start()
+
+    # Run for 1 hour
+    await asyncio.sleep(3600)
+    await monitor.stop()
+
+    print("Final status:", monitor.get_status())
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+## 5. Idiomatic Feature Table
 
 | Feature | Used? | Implementation |
 |---------|-------|----------------|
-| `@output_validator` + `ModelRetry` | No | Remediation uses retry count, not semantic validation |
-| `@system_prompt` | No | Remediation prompt is per-objective, passed in user message |
-| `deps_type` + `RunContext` | Yes | `GoalMonitorDeps` holds evaluators and callbacks |
-| `@tool` / `@tool_plain` | No | Evaluators are Python callables, not agent tools |
-| `pydantic_graph` | **Yes (Stable)** | Cyclic nodes: Monitor → Check → Remediate → Monitor |
+| `@output_validator` + `ModelRetry` | No | Remediation is best-effort |
+| `@system_prompt` | No | Static prompt for remediation agent |
+| `deps_type` + `RunContext` | No | State passed via graph context |
+| `@tool` / `@tool_plain` | No | Evaluators are plain Python callables |
+| `pydantic_graph` | **Yes (Stable)** | WaitNode → CheckNode → RemediateNode |
 
-## 4. State Persistence
+## 6. Test Strategy
+
+### 6.1 Model Tests
 
 ```python
-import json
-from pathlib import Path
+def test_goal_creation():
+    async def dummy_eval():
+        return 50.0
 
-
-def save_state(state: GoalMonitorState, path: Path) -> None:
-    """Persist state for resumption."""
-    data = {
-        "objectives": [o.model_dump() for o in state.objectives],
-        "last_check_time": state.last_check_time.isoformat() if state.last_check_time else None,
-        "remediation_history": [r.model_dump() for r in state.remediation_history],
-    }
-    path.write_text(json.dumps(data, indent=2))
-
-
-def load_state(path: Path) -> GoalMonitorState:
-    """Load state from persistence."""
-    data = json.loads(path.read_text())
-    return GoalMonitorState(
-        objectives=[GoalObjective(**o) for o in data["objectives"]],
-        last_check_time=datetime.fromisoformat(data["last_check_time"]) if data["last_check_time"] else None,
-        remediation_history=[RemediationResult(**r) for r in data["remediation_history"]],
+    goal = Goal(
+        name="test",
+        target=80.0,
+        evaluator=dummy_eval,
     )
+    assert goal.comparator == ">="
 ```
 
-## 5. Test Strategy
-
-### 5.1 Unit Tests
+### 6.2 Node Tests
 
 ```python
-import pytest
-from unittest.mock import AsyncMock, MagicMock
-from datetime import datetime
+@pytest.mark.asyncio
+async def test_check_node_detects_gap():
+    async def failing_eval():
+        return 50.0  # Below target of 80
 
-
-@pytest.fixture
-def sample_objective():
-    return GoalObjective(
-        id="test-obj",
-        description="Test objective",
-        key_results=[
-            KeyResult(
-                id="kr1",
-                metric_name="test_metric",
-                target_value=80.0,
-                comparator=">=",
-                evaluator_type="python_callable",
-                evaluator_config={"function": "test_eval"},
-            )
-        ],
-        remediation_prompt="Fix the thing",
-    )
-
-
-@pytest.fixture
-def mock_deps():
-    return GoalMonitorDeps(
-        evaluators={"test_eval": AsyncMock(return_value=75.0)},
-        on_gap_detected=AsyncMock(),
-    )
-
-
-async def test_check_detects_gap(sample_objective, mock_deps):
-    """CheckNode should detect when KR is not met."""
-    state = GoalMonitorState(objectives=[sample_objective])
+    goal = Goal(name="test", target=80.0, evaluator=failing_eval)
+    state = MonitorState(goals=[goal])
     ctx = MagicMock()
     ctx.state = state
-    ctx.deps = mock_deps
 
     node = CheckNode()
     next_node = await node.run(ctx)
 
     assert isinstance(next_node, RemediateNode)
-    assert state.current_gap is not None
-    assert state.current_gap.objective_id == "test-obj"
+    assert state.current_gap == goal
 
 
-async def test_check_passes_when_met(sample_objective, mock_deps):
-    """CheckNode should pass when KR is met."""
-    mock_deps.evaluators["test_eval"] = AsyncMock(return_value=85.0)
-    state = GoalMonitorState(objectives=[sample_objective])
+@pytest.mark.asyncio
+async def test_check_node_passes_when_met():
+    async def passing_eval():
+        return 90.0  # Above target of 80
+
+    goal = Goal(name="test", target=80.0, evaluator=passing_eval)
+    state = MonitorState(goals=[goal])
     ctx = MagicMock()
     ctx.state = state
-    ctx.deps = mock_deps
 
     node = CheckNode()
     next_node = await node.run(ctx)
 
-    # After checking all objectives, returns to Monitor
-    assert isinstance(next_node, MonitorNode)
-    assert state.current_gap is None
+    assert isinstance(next_node, WaitNode)
 ```
 
-### 5.2 Graph Tests
+### 6.3 Lifecycle Tests
 
 ```python
-async def test_full_monitoring_cycle():
-    """Test complete monitoring cycle with mocked agents."""
-    objective = GoalObjective(
-        id="test",
-        description="Test",
-        key_results=[
-            KeyResult(
-                id="kr1",
-                metric_name="value",
-                target_value=100.0,
-                comparator=">=",
-                evaluator_type="python_callable",
-                evaluator_config={"function": "get_value"},
-            )
-        ],
-        remediation_prompt="Fix it",
-    )
-
-    call_count = 0
-
-    async def improving_evaluator():
-        nonlocal call_count
-        call_count += 1
-        return 50.0 if call_count == 1 else 100.0  # Fails first, passes second
-
-    deps = GoalMonitorDeps(evaluators={"get_value": improving_evaluator})
-    state = GoalMonitorState(
-        objectives=[objective],
-        check_interval_seconds=0.01,  # Fast for testing
-    )
-
-    # Run for a short time
-    async def run_briefly():
-        await asyncio.sleep(0.1)
-        state.shutdown_requested = True
-
-    asyncio.create_task(run_briefly())
-    await goal_monitor_graph.run(MonitorNode(), state=state, deps=deps)
-
-    assert call_count >= 2  # Evaluated at least twice
-```
-
-### 5.3 Lifecycle Tests
-
-```python
+@pytest.mark.asyncio
 async def test_monitor_start_stop():
-    """Test GoalMonitor lifecycle."""
-    monitor = GoalMonitor(
-        objectives=[],
-        check_interval=0.01,
-    )
+    async def always_met():
+        return 100.0
+
+    goal = Goal(name="test", target=80.0, evaluator=always_met)
+    monitor = GoalMonitor([goal], check_interval=0.01)
 
     await monitor.start()
     assert monitor._task is not None
-    assert not monitor._task.done()
 
+    await asyncio.sleep(0.05)
     await monitor.stop()
-    assert monitor._task.done()
-
-
-async def test_monitor_context_manager():
-    """Test context manager usage."""
-    monitor = GoalMonitor(objectives=[], check_interval=0.01)
-
-    async with monitor.running():
-        assert monitor._task is not None
-        monitor._state.shutdown_requested = True
 
     assert monitor._task.done()
+
+
+@pytest.mark.asyncio
+async def test_shutdown_exits_wait():
+    state = MonitorState(goals=[], shutdown=True)
+    ctx = MagicMock()
+    ctx.state = state
+
+    node = WaitNode()
+    with patch("asyncio.sleep"):
+        result = await node.run(ctx)
+
+    assert isinstance(result, End)
 ```
 
-## 6. Edge Cases
+## 7. Edge Cases
 
-1. **No objectives:** Monitor should still run (empty loop)
-2. **All objectives disabled:** Skip checking, just wait
-3. **Evaluator raises exception:** Log error, treat as KR not met
-4. **Remediation agent fails:** Escalate after max retries
-5. **Shutdown during remediation:** Complete current action, then stop
+1. **No goals:** Monitor runs but does nothing (empty check loop)
+2. **Evaluator raises exception:** Log error, treat as goal not met
+3. **Remediation fails:** Call `on_escalate()` stub, continue to next check
+4. **Rapid shutdown:** WaitNode checks shutdown before sleeping
+5. **All goals met:** Loop back to WaitNode, no remediation
 
-## 7. Integration & Documentation
+## 8. Production TODOs
 
-**Integration (TODO):**
+### P1: Escalation
+- Add `EscalateNode` for repeated remediation failures
+- Implement `on_escalate()` with real alerting (Slack, PagerDuty)
+- Add `max_remediation_attempts` config
+- Track remediation history per goal
+
+### P2: Persistence
+- Save `MonitorState` to JSON file
+- Load state on startup for resume
+- Add `state_path` parameter to `GoalMonitor`
+
+```python
+# Future API
+monitor = GoalMonitor(
+    goals=[...],
+    state_path="./monitor_state.json",  # P2
+)
+```
+
+### P3: Advanced Evaluators
+- `file_stat_evaluator(path, metric)` - file age, size, exists
+- `agent_assessment_evaluator(agent, prompt)` - LLM judgment
+- `composite_evaluator(evals, logic)` - AND/OR combinations
+
+```python
+# Future API
+Goal(
+    name="readme_fresh",
+    evaluator=file_stat_evaluator("README.md", "age_hours"),
+    target=24.0,
+    comparator="<=",
+)
+```
+
+### P4: OKR Hierarchy
+- `Objective` with multiple `KeyResult` children
+- Priority ordering for check sequence
+- Dependencies between objectives
+
+```python
+# Future API
+objective = Objective(
+    name="System Health",
+    key_results=[
+        KeyResult(name="disk", target=80.0, ...),
+        KeyResult(name="memory", target=90.0, ...),
+    ],
+    priority=1,
+)
+```
+
+### P5: Observability
+- Logfire integration for structured logging
+- Spans around remediation agent calls
+- Metrics: goals_checked, gaps_detected, remediations_attempted
+
+```python
+# Future implementation
+import logfire
+
+logfire.info("goal_checked", goal=goal.name, met=is_met)
+logfire.warn("goal_gap", goal=goal.name, current=val, target=target)
+
+with logfire.span("remediation", goal=goal.name):
+    result = await remediation_agent.run(...)
+```
+
+## 9. Integration Checklist
+
 - [ ] Added to `scripts/integration_test.sh` ALL_PATTERNS array
 - [ ] Exported from `src/agentic_patterns/__init__.py`
 - [ ] `if __name__ == "__main__"` demo block
-
-**Documentation:**
-- **Pattern page:** `docs/patterns/11-goal-monitoring.md`
-- **Mermaid:** State diagram showing Monitor → Check → Remediate cycle
-- **Use Cases:** Maintenance daemons, compliance bots, auto-refactorers
-- **Example:** Keep README.md fresh, auto-update if stale
-
-## 8. Open Questions
-
-1. Should evaluators be async generators for streaming metrics?
-2. How to handle dependent KRs (KR2 only matters if KR1 passes)?
-3. Should remediation history be capped to prevent memory growth?
-4. How to integrate with external alerting systems (PagerDuty, Slack)?
-
-## 9. Review & Refinement Areas
-
-### 9.1 State Persistence Concurrency
-**Concern:** The spec mentions saving state to JSON/SQLite. If the monitor runs in a background task while the main app also accesses this state, we risk race conditions or file corruption.
-**Refinement:** Use `aiofiles` for asynchronous file I/O or a lightweight locking mechanism (e.g., `asyncio.Lock`) around state persistence operations to ensure data integrity.
-
-### 9.2 Evaluator Hallucination Risk
-**Concern:** The `agent_assessment_evaluator` relies on an LLM to judge success. It might simply "hallucinate" that a goal is met without verifying facts.
-**Refinement:** Mark `agent_assessment` as a high-risk evaluator. Mandate that it must be backed by "Ground Truth" tools (e.g., `read_file`, `check_db`) that provided evidence in the context, rather than just asking "Is it done?".
-
-### 9.3 Main App Integration & Blocking
-**Concern:** The `on_gap_detected` callback provides integration, but if the callback performs long-running operations, it could block the monitoring loop.
-**Refinement:** Explicitly specify that `on_gap_detected` and `on_remediation` callbacks should be "fire-and-forget" or very fast. If complex logic is needed, they should spawn their own background tasks so the Monitor Loop stays responsive.
+- [ ] Documentation at `docs/patterns/11-goal-monitoring.md`

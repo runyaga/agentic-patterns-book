@@ -219,7 +219,7 @@ If the answer is "no" to all, the pattern may already be idiomatic.
 | 19 | Evaluation | DONE | ✅ Already idiomatic |
 | 20 | Prioritization | DONE | ✅ Already idiomatic |
 | 10 | MCP Integration | DONE | ✅ Uses `toolsets` + `MCPServerStdio` |
-| 11 | Teleological Engine (Goal Setting) | pending | TBD |
+| 11 | Goal Monitoring (Teleological Engine) | DONE | ✅ Uses `pydantic_graph` stable |
 | 12 | Phoenix Protocol (Exception Handling) | DONE | ✅ Uses `recoverable_run` wrapper |
 | 15 | Agora (Inter-Agent Comm) | pending | TBD |
 | 17 | Cognitive Weaver (Reasoning) | pending | TBD |
