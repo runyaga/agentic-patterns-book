@@ -36,13 +36,40 @@ Source: [`src/agentic_patterns/memory.py`](https://github.com/runyaga/agentic-pa
 - **Long-running Sessions**: Coding assistants, RPG game masters.
 - **Summarization**: Digesting long transcripts into key points.
 
-## When to Use
+## Production Reality Check
+
+### When to Use
 
 | Type | Best For | Trade-off |
 |------|----------|-----------|
-| **Buffer** | Short, high-detail tasks | High token cost |
-| **Window** | Infinite streams, reactive bots | Amnesia of old facts |
+| **Buffer** | Short, high-detail tasks | High token cost, hits limits fast |
+| **Window** | Infinite streams, reactive bots | Loses distant context ("amnesia") |
 | **Summary** | Long-term coherent conversations | Lossy compression of details |
+
+- *Comparison*: Stateless interactions don't need memory; use memory only when
+  context across turns is required for coherence
+
+### When NOT to Use
+- Stateless interactions where each request is independent
+- When message history is already managed externally (e.g., by your app's DB)
+- Short conversations that fit easily in context window without management
+- When summary quality is critical but hard to validate (summaries lose nuance)
+- *Anti-pattern*: Compliance-heavy domains where storing conversation history
+  is prohibited or requires complex audit controls
+
+### Production Considerations
+- **Storage persistence**: In-memory stores are lost on restart. Use Redis,
+  PostgreSQL, or similar for production memory that survives deployments.
+- **Token budgeting**: Memory competes with prompt and response for context
+  window. Monitor actual token usage and tune memory limits accordingly.
+- **Summary quality**: SummaryMemory relies on LLM summarization which can
+  hallucinate or drop important facts. Validate summaries for critical use cases.
+- **Privacy**: Memory stores may contain PII. Implement retention policies,
+  encryption, and user data deletion capabilities.
+- **Multi-user isolation**: Ensure one user's memory doesn't leak to another.
+  Namespace or partition memory by user/session ID.
+- **Cache invalidation**: Decide when memory should be cleared (session end,
+  time-based expiry, explicit user request).
 
 ## Example
 

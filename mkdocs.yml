@@ -73,6 +73,10 @@ nav:
       - Human-in-Loop: patterns/13-human-in-loop.md
       - Knowledge Retrieval: patterns/14-knowledge-retrieval.md
       - Agent Marketplace: patterns/15-agent-marketplace.md
+      - Resource Optimization: patterns/16-resource-optimization.md
       - Reasoning Weaver: patterns/17-reasoning-weaver.md
+      - Guardrails: patterns/18-guardrails.md
+      - Evaluation & Monitoring: patterns/19-evaluation-monitoring.md
+      - Prioritization: patterns/20-prioritization.md
       - Domain Exploration: patterns/21-domain-exploration.md
   - Reproduce This: reproduce.md

@@ -69,16 +69,26 @@ docs/patterns/
 ├── 07-multi-agent.md           # Chapter 7
 ├── 08-memory.md                # Chapter 8
 ├── 09-learning.md              # Chapter 9
+├── 10-mcp-integration.md       # Chapter 10
+├── 11-goal-monitoring.md       # Chapter 11
+├── 12-exception-recovery.md    # Chapter 12
 ├── 13-human-in-loop.md         # Chapter 13
-└── 14-knowledge-retrieval.md   # Chapter 14
+├── 14-knowledge-retrieval.md   # Chapter 14
+├── 15-agent-marketplace.md     # Chapter 15 (Spec)
+├── 16-resource-optimization.md # Chapter 16
+├── 17-reasoning-weaver.md      # Chapter 17 (Spec)
+├── 18-guardrails.md            # Chapter 18
+├── 19-evaluation-monitoring.md # Chapter 19
+├── 20-prioritization.md        # Chapter 20
+└── 21-domain-exploration.md    # Chapter 21 (Spec)
 ```
 
 #### Naming Convention
 
 Files use the format `{chapter}-{pattern-name}.md`:
-- Chapter number with leading zero (01-14)
+- Chapter number with leading zero (01-21)
 - Pattern name in kebab-case
-- Gaps in numbering indicate skipped chapters (10-12, 15)
+- "(Spec)" suffix in index indicates specification/planned patterns
 
 #### Content Structure
 
@@ -195,6 +205,7 @@ Before marking a pattern as complete, verify:
 - [ ] pattern-implementation.md status updated to DONE
 - [ ] Any new lessons added to LESSONS.md
 - [ ] Production Reality Check section included (not just "When to Use")
+- [ ] Example section with runnable command included
 - [ ] `uv run mkdocs build --strict` passes locally
 
 ## Style Guidelines
@@ -350,6 +361,12 @@ guidance for practitioners.
 ### Production Considerations
 - **[Category]**: [What's needed for production]
 - **[Category]**: [Scaling/failure concerns]
+
+## Example
+
+` ` `bash
+.venv/bin/python -m agentic_patterns.pattern_name
+` ` `
 ```
 
 ### Example (Prompt Chaining)
@@ -371,4 +388,30 @@ guidance for practitioners.
 - **Observability**: Log each chain step separately for debugging
 - **Failure handling**: Decide retry strategy per-step vs. full-chain
 - **Cost**: Each step is a separate API call; budget accordingly
+
+## Example
+
+` ` `bash
+.venv/bin/python -m agentic_patterns.prompt_chaining
+` ` `
 ```
+
+---
+
+## Review Feedback (Codex)
+
+- The spec says pattern names use underscores, but the docs naming convention
+  is kebab-case; clarify which is authoritative and align filenames and table
+  entries accordingly.
+- The line length rule (79 chars) is not enforced in this file; either relax
+  the rule for Markdown or add a formatter step, otherwise it is aspirational.
+- The docs structure lists chapters 01-09, 13-14 and says 10-12, 15 are
+  skipped; this conflicts with the reality-check specs that include 10-12 and
+  15+ entries. Decide whether those chapters are truly skipped.
+- README instructions link to `src/agentic_patterns/*.py` with a relative
+  path, while later guidance says docs must link to absolute GitHub URLs to
+  satisfy mkdocs. Make the scope of this rule explicit (README vs docs).
+- The "FINAL v1" status and a future date (2025-12-26) are a red flag; if this
+  is authoritative, move to a versioning scheme or update to a current date.
+
+— Codex

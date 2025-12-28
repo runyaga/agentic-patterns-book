@@ -30,11 +30,37 @@ Source: [`src/agentic_patterns/reflection.py`](https://github.com/runyaga/agenti
 - **Content Writing**: Validator checks style guidelines; retries on violations.
 - **Data Extraction**: Validator checks schema constraints; retries on mismatches.
 
-## When to Use
+## Production Reality Check
 
-- You have a clear "pass/fail" or scoring criteria.
-- You want to keep your main application logic linear (`result = run()`) rather than looping.
-- You want the model to see *why* it failed (the `ModelRetry` message becomes conversation history).
+### When to Use
+- You have clear "pass/fail" or scoring criteria that can be programmatically
+  checked
+- You want linear application logic (`result = run()`) with retries handled
+  internally
+- Feedback from failures should inform the retry (model sees why it failed via
+  `ModelRetry` message in conversation history)
+- Quality requirements justify the cost of multiple generation attempts
+- *Comparison*: Single-shot + external validation is too cumbersome to maintain
+
+### When NOT to Use
+- No objective validation criteria exist (purely subjective quality)
+- Single-attempt accuracy is already acceptable for your use case
+- Latency budget doesn't allow for retry loops (each retry is a full LLM call)
+- Validation logic is complex enough to warrant external orchestration
+- *Anti-pattern*: Creative writing tasks with subjective quality—retries don't
+  converge when "good" has no objective definition
+
+### Production Considerations
+- **Max retries**: Always set a cap. Infinite loops are expensive and can
+  indicate a fundamentally broken prompt that retries won't fix.
+- **Cost tracking**: Monitor retry rates. High retry rates suggest prompt
+  improvement is needed rather than more retries.
+- **Validator complexity**: Keep validators fast and deterministic. Slow
+  validators (e.g., running full test suites) compound latency.
+- **Feedback quality**: The `ModelRetry` message becomes part of context.
+  Make error messages actionable ("missing required field X" not just "invalid").
+- **Validator drift**: Validators change as schemas evolve. Keep validator logic
+  versioned alongside output models to avoid silent breakage.
 
 ## Example
 

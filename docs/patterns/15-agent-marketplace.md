@@ -68,4 +68,38 @@ A "Project Manager" agent needs a code review.
 
 ## Production Reality Check
 
-For static workflows where you know your agents ahead of time, use the **Router (Chapter 2)** or **Supervisor (Chapter 7)** patterns. The Agora is powerful but introduces latency and complexity suitable only for highly dynamic or open-ended systems.
+### When to Use
+- Worker pool is dynamic (agents join/leave at runtime, plugins loaded dynamically)
+- Cost/latency tradeoffs vary per request (cheap fast agent vs. expensive thorough one)
+- Competitive execution is needed (multiple agents could handle task, pick best)
+- Decoupling is valuable (requesters shouldn't know which agents exist)
+- *Comparison*: Router or Supervisor patterns require knowing agents at design time;
+  Agora enables runtime discovery
+
+### When NOT to Use
+- Agent pool is static and known at design time (use Router or Supervisor instead)
+- Latency is critical (bidding adds round-trip overhead)
+- Coordination complexity outweighs benefits for your use case
+- Single agent can handle all task types adequately
+- *Anti-pattern*: Small fixed set of 3-4 tasks where a rules-based router is enough—
+  marketplace overhead dominates the work
+
+### Production Considerations
+- **Message bus**: Replace `asyncio.Queue` with durable message systems (Redis
+  Streams, RabbitMQ, NATS) to handle process crashes.
+- **Distributed tracing**: OpenTelemetry/Logfire is critical to visualize the
+  async fan-out and debug "why did agent X win?"
+- **Economic layer**: Real marketplaces need quota tracking, rate limiting, or
+  credits to prevent "Winner's Curse" (agents over-promising).
+- **Agent trust**: Third-party agents may misbehave. Sandbox execution, limit
+  permissions, and consider reputational scoring over time.
+- **Bid timeout**: Set timeouts for bid collection. Don't wait forever for slow
+  agents.
+- **Selection strategy**: "Highest confidence" vs "lowest cost" vs "agent
+  judgment" have different tradeoffs. Make the strategy configurable.
+- **Gaming risks**: Agents may learn to game selection criteria. Monitor for
+  bid inflation and add safeguards.
+
+## Example
+
+> **Note:** This pattern is in specification phase. No runnable example yet.

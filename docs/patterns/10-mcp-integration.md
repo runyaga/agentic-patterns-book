@@ -62,13 +62,41 @@ Use `process_tool_call` to inject context into every tool invocation.
 2.  **Security Boundaries**: Run tools in a separate process or container (via Docker) to sandbox potentially dangerous operations like file access.
 3.  **Local Dev Tools**: Give your agent access to your local CLI tools (git, grep, ls) via stdio servers.
 
-## When to Use
+## Production Reality Check
+
+### When to Use
 
 | Use Case | Recommended Approach |
 | :--- | :--- |
-| **Simple Python Tools** | Use standard `@agent.tool`. Easier to debug and deploy if everything is in one process. |
-| **Shared/Remote Tools** | Use **MCP Integration**. Perfect for tools that live on another server or are written in another language. |
-| **Sandboxed Execution** | Use **MCP Integration**. Run the MCP server in a restricted environment (Docker/WASM). |
+| **Simple Python Tools** | Use standard `@agent.tool`. Easier to debug and deploy. |
+| **Shared/Remote Tools** | Use **MCP Integration**. For tools on other servers or in other languages. |
+| **Sandboxed Execution** | Use **MCP Integration**. Run MCP server in Docker/WASM for isolation. |
+
+- *Comparison*: For Python-only tools in a single process, standard `@agent.tool`
+  is simpler and has lower overhead
+
+### When NOT to Use
+- All tools are Python and run in the same process (standard `@agent.tool` is
+  simpler)
+- Tool latency is critical (MCP adds IPC overhead vs. direct function calls)
+- You don't need tool reuse across languages/agents
+- Deployment constraints prevent running separate MCP server processes
+- *Anti-pattern*: Single-process internal tools with tight latency SLAs—MCP
+  adds unnecessary serialization and network hops
+
+### Production Considerations
+- **Server lifecycle**: MCP servers are separate processes. Handle startup,
+  shutdown, and restarts properly. Consider systemd/supervisord for production.
+- **Connection failures**: Network/IPC can fail. Implement reconnection logic
+  and graceful degradation when servers are unavailable.
+- **Tool discovery caching**: `list_tools()` can be cached to avoid repeated
+  discovery calls. Invalidate cache when servers restart.
+- **Security**: MCP servers execute code. Run in sandboxed environments (Docker,
+  WASM) for untrusted operations. Validate all inputs from agents.
+- **Schema versioning**: Tool schemas can change. Coordinate agent and server
+  updates to avoid breaking changes from contract drift.
+- **Observability**: Log MCP tool calls separately from agent logs. Include
+  server name, tool name, inputs, outputs, and latency.
 
 ## Example
 

@@ -65,13 +65,40 @@ For unknown or ambiguous errors, we ask the Clinic Agent if a retry is worth it.
 3.  **Context Management**: Automatically truncating prompts when context limits are hit.
 4.  **Production Safety**: preventing a single crashed agent from bringing down the entire application.
 
-## When to Use
+## Production Reality Check
+
+### When to Use
 
 | Use Case | Recommended Approach |
 | :--- | :--- |
-| **Output Validation** | Use `@output_validator` with `ModelRetry`. This handles *semantic* errors where the model ran successfully but produced bad data. |
-| **Exception Handling** | Use **Phoenix Protocol**. This handles *runtime* errors (crashes, timeouts, API failures) where `agent.run()` failed. |
-| **Complex Workflows** | Use `pydantic_graph`. If recovery requires complex state transitions, a graph is better than a wrapper. |
+| **Output Validation** | Use `@output_validator` with `ModelRetry`. For *semantic* errors where model ran but produced bad data. |
+| **Exception Handling** | Use **Phoenix Protocol**. For *runtime* errors (crashes, timeouts, API failures). |
+| **Complex Workflows** | Use `pydantic_graph`. If recovery requires complex state transitions. |
+
+- *Comparison*: For simple transient failures, basic retry with `tenacity` or a
+  loop may be sufficient
+
+### When NOT to Use
+- Errors are always fatal and shouldn't be retried (e.g., auth failures)
+- Simple retry with backoff is sufficient (use `tenacity` or basic loop)
+- Clinic Agent overhead exceeds value of intelligent diagnosis
+- Streaming responses are required (see Streaming Limitation section)
+- *Anti-pattern*: Retrying on deterministic auth/config failures—these won't
+  succeed regardless of retry count
+
+### Production Considerations
+- **Retry limits**: Always cap retries. Infinite retry loops are expensive and
+  can indicate a fundamentally broken prompt/system.
+- **Deterministic classification**: The heuristic classifier handles 90% of
+  errors without LLM calls. Keep this path fast and cheap.
+- **Clinic Agent costs**: The Clinic Agent is only called for UNKNOWN errors.
+  Monitor how often this happens—high rates suggest missing heuristics.
+- **Circuit breaking**: After N consecutive failures, consider circuit breaking
+  to prevent cascade failures. Don't hammer a failing API.
+- **Idempotency**: Recovery may re-run actions. Ensure side-effect-producing
+  operations are idempotent or guard against duplicate execution.
+- **Observability**: Log every exception, classification, and recovery action.
+  Essential for understanding failure patterns and tuning heuristics.
 
 ## Streaming Limitation
 

@@ -36,11 +36,41 @@ Source: [`src/agentic_patterns/knowledge_retrieval.py`](https://github.com/runya
 - **Company Wiki**: Search internal policies (Notion/Confluence).
 - **Recent News**: Inject latest data that post-dates the model training.
 
-## When to Use
+## Production Reality Check
 
-- Information is proprietary, private, or too new for the model.
-- Hallucination must be minimized (grounding).
-- Source citations are required.
+### When to Use
+- Information is proprietary, private, or too new for model's training data
+- Hallucination must be minimized (grounding answers in source documents)
+- Source citations are required (compliance, trust, verification)
+- Knowledge base changes frequently and can't be baked into model weights
+- *Comparison*: For small, stable document sets, prompt stuffing (including
+  full docs in context) is simpler than building a RAG pipeline
+
+### When NOT to Use
+- Questions are about general knowledge the model already has
+- Document corpus is small enough to fit in context window directly
+- Retrieval latency is unacceptable for your use case
+- Query types don't match well with semantic similarity (e.g., exact lookups)
+- *Anti-pattern*: Tiny, stable FAQ docs where RAG adds latency and complexity
+  for no benefit
+
+### Production Considerations
+- **Chunking strategy**: Chunk size affects retrieval quality. Too small loses
+  context; too large wastes tokens. Experiment with your corpus.
+- **Embedding quality**: Embedding model choice matters. Domain-specific models
+  may outperform general ones for specialized content.
+- **Retrieval relevance**: Monitor retrieval quality. If retrieved chunks don't
+  answer the question, the LLM will hallucinate anyway.
+- **Index maintenance**: Documents change. Implement incremental indexing and
+  handle document updates/deletions.
+- **Citation faithfulness**: Retrieved chunks may be cited but not actually used.
+  Evaluate whether citations are accurate and relevant.
+- **Hybrid search**: Pure vector search misses exact matches. Consider hybrid
+  (vector + keyword) for better recall.
+- **Latency budget**: Embedding query + vector search + LLM call. Each step
+  adds latency. Consider caching frequent queries.
+- **Evaluation**: Regularly evaluate retrieval precision/recall and answer
+  quality. RAG can degrade silently as corpus grows.
 
 ## Example
 
