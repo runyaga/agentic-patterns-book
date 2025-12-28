@@ -717,3 +717,21 @@ async def test_full_reasoning_cycle():
 ### 6.3 Thought-Trace Visualization
 **Concern:** The "Thinking" process is invisible to the user, making it hard to trust the output.
 **Refinement:** The implementation should include a built-in method to export the reasoning tree as a **Mermaid** diagram. This is a core "working example" feature that makes the internal state observable.
+
+## 7. Production Reality Check & Recommendations
+
+### 7.1 Recommended Demo Topic: "Game of 24"
+To demonstrate the value of Tree of Thoughts (ToT) without ambiguity, use the **Game of 24** (e.g., "Use 4, 7, 8, 8 to make 24").
+*   **Why:** It requires lookahead and backtracking. A linear CoT often fails because it commits to an operation (e.g., "4 + 7 = 11") that might lead to a dead end.
+*   **Success Metric:** Strictly deterministic (`result == 24`). This makes the unit tests rock solid.
+
+### 7.2 Model Selection Strategy
+ToT generates *many* tokens (Branching Factor $\times$ Depth).
+*   **Recommendation:** Use **qwen3:4b** for the `GeneratorAgent` to produce candidate steps quickly and cheaply. Its small size is ideal for the repetitive, constrained generation tasks required by this pattern.
+*   **Evaluator:** Use a stronger model (or pure Python arithmetic) for the `EvaluatorAgent` to verify if a path is still viable.
+*   **Routing:** Routing between a small generation model (`qwen3:4b`) and a larger evaluator/logic layer is the most cost-effective way to run this pattern.
+
+### 7.3 When NOT to Use
+Do not use this for creative writing or open-ended chat. The latency/cost overhead is 10x-100x higher than a standard call. Use it only when:
+1.  The problem has a verifiable solution condition.
+2.  Greedy decoding (choosing the most likely next word) is known to fail (e.g., puzzles, complex planning).

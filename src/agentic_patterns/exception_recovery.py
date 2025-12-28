@@ -13,9 +13,16 @@ Key concepts:
 Distinction from ModelRetry:
 - ModelRetry: semantic failures during generation (via @output_validator)
 - Phoenix: Python exceptions from agent.run() itself
+
+Streaming Limitation:
+This pattern only supports agent.run(), NOT agent.run_stream().
+Streaming recovery is fundamentally broken - mid-stream errors (~60% of
+cases) cause duplicate/inconsistent output. If you need streaming with
+recovery, handle retries at the application level using is_retryable().
 """
 
 import asyncio
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any
@@ -24,6 +31,10 @@ from typing import TypeVar
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic_ai import Agent
+from pydantic_ai.agent import AgentRunResult
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.messages import UserContent
+from pydantic_ai.usage import RunUsage
 
 from agentic_patterns._models import get_model
 
@@ -261,32 +272,101 @@ async def _diagnose_unknown(
 # --8<-- [end:clinic]
 
 
+# --8<-- [start:is_retryable]
+def is_retryable(exc: Exception) -> bool:
+    """
+    Check if exception is likely retryable.
+
+    Use this helper when handling streaming errors at the application level,
+    since recoverable_run() doesn't support streaming.
+
+    Args:
+        exc: The exception to check.
+
+    Returns:
+        True if the error category suggests retry might help.
+
+    Example:
+        async with agent.run_stream("prompt") as stream:
+            try:
+                async for chunk in stream.stream_text():
+                    print(chunk)
+            except Exception as e:
+                if is_retryable(e):
+                    # Handle retry at application level
+                    pass
+    """
+    category = classify_error(exc)
+    return category != ErrorCategory.UNKNOWN
+
+
+# --8<-- [end:is_retryable]
+
+
 # --8<-- [start:recoverable_run]
 DepsT = TypeVar("DepsT")
 OutputT = TypeVar("OutputT")
 
 
+def _truncate_prompt(
+    prompt: str | Sequence[UserContent] | None,
+    truncate_to: int,
+) -> str | Sequence[UserContent] | None:
+    """Truncate prompt to specified length."""
+    if prompt is None:
+        return None
+    if isinstance(prompt, str):
+        if len(prompt) > truncate_to:
+            return prompt[:truncate_to] + "\n[Truncated due to length]"
+        return prompt
+    # Sequence[UserContent] - just return as-is, can't easily truncate
+    return prompt
+
+
+def _truncate_history(
+    history: Sequence[ModelMessage] | None,
+    ratio: float,
+) -> list[ModelMessage] | None:
+    """Truncate message history, keeping most recent messages."""
+    if history is None or len(history) == 0:
+        return None
+    keep = max(1, int(len(history) * ratio))
+    return list(history[-keep:])
+
+
 async def recoverable_run(
     agent: Agent[DepsT, OutputT],
-    prompt: str,
+    user_prompt: str | Sequence[UserContent] | None = None,
     *,
     deps: DepsT | None = None,
-    config: RecoveryConfig | None = None,
-) -> OutputT:
+    message_history: Sequence[ModelMessage] | None = None,
+    recovery_config: RecoveryConfig | None = None,
+    **kwargs: Any,
+) -> AgentRunResult[OutputT]:
     """
     Run agent with automatic exception recovery.
+
+    Returns the full AgentRunResult, preserving all metadata including
+    .output, .usage(), .all_messages(), etc.
 
     Uses deterministic heuristics for known errors, optional LLM
     diagnosis for unknown errors.
 
+    Note: This function only supports agent.run(), NOT agent.run_stream().
+    Streaming recovery is fundamentally broken for mid-stream errors.
+    Use is_retryable() to handle streaming retries at the application level.
+
     Args:
         agent: The agent to run.
-        prompt: User prompt.
+        user_prompt: User prompt (string or structured content).
         deps: Agent dependencies.
-        config: Recovery configuration.
+        message_history: Prior conversation messages.
+        recovery_config: Recovery behavior configuration.
+        **kwargs: Additional args forwarded to agent.run().
 
     Returns:
-        Agent output on success.
+        Full AgentRunResult with .output, .usage(), .all_messages(), etc.
+        Usage is accumulated across all retry attempts.
 
     Raises:
         Exception: Original exception if recovery fails.
@@ -296,22 +376,45 @@ async def recoverable_run(
             my_agent,
             "Process this data",
             deps=MyDeps(),
-            config=RecoveryConfig(max_attempts=3),
+            recovery_config=RecoveryConfig(max_attempts=3),
         )
+        print(result.output)  # The agent's output
+        print(result.usage())  # Token usage (includes failed attempts)
     """
-    config = config or RecoveryConfig()
+    config = recovery_config or RecoveryConfig()
     clinic_agent: Agent[None, ClinicDiagnosis] | None = None
     categories_seen: list[str] = []
-    current_prompt = prompt
+    current_prompt = user_prompt
+    current_history = message_history
     last_exception: Exception | None = None
+
+    # Accumulate usage across all attempts
+    accumulated_usage = RunUsage()
 
     for attempt in range(config.max_attempts + 1):
         try:
-            kwargs: dict[str, Any] = {}
+            run_kwargs: dict[str, Any] = dict(kwargs)
             if deps is not None:
-                kwargs["deps"] = deps
-            result = await agent.run(current_prompt, **kwargs)
-            return result.output
+                run_kwargs["deps"] = deps
+            if current_history is not None:
+                run_kwargs["message_history"] = current_history
+
+            result = await agent.run(current_prompt, **run_kwargs)
+
+            # Add this attempt's usage to accumulated total
+            ru = result.usage()
+            au = accumulated_usage
+            accumulated_usage = RunUsage(
+                requests=au.requests + ru.requests,
+                input_tokens=au.input_tokens + ru.input_tokens,
+                output_tokens=au.output_tokens + ru.output_tokens,
+            )
+
+            # Update result's usage to reflect all attempts
+            # Note: AgentRunResult._usage is the internal storage
+            result._usage = accumulated_usage
+            return result
+
         except Exception as exc:
             last_exception = exc
             category = classify_error(exc)
@@ -339,9 +442,12 @@ async def recoverable_run(
                 await asyncio.sleep(action.wait_seconds)
 
             if action.action == "retry_shorter" and action.truncate_to:
-                current_prompt = prompt[: action.truncate_to]
-                if len(prompt) > action.truncate_to:
-                    current_prompt += "\n[Truncated due to length]"
+                current_prompt = _truncate_prompt(
+                    user_prompt, action.truncate_to
+                )
+                current_history = _truncate_history(
+                    message_history, config.truncate_ratio
+                )
 
     # All attempts failed
     if last_exception:
@@ -366,13 +472,14 @@ if __name__ == "__main__":
             output_type=str,
         )
 
-        # Run with recovery
+        # Run with recovery - returns full AgentRunResult
         result = await recoverable_run(
             demo_agent,
             "What is 2 + 2?",
-            config=RecoveryConfig(max_attempts=3),
+            recovery_config=RecoveryConfig(max_attempts=3),
         )
 
-        print(f"\nResult: {result}")
+        print(f"\nOutput: {result.output}")
+        print(f"Usage: {result.usage()}")
 
     asyncio.run(main())

@@ -769,3 +769,25 @@ async def test_full_marketplace_flow():
 ### 6.3 Structured Proposals
 **Concern:** Loose text proposals are hard to evaluate.
 **Refinement:** Use `pydantic-ai`'s `result_type` to force agents to provide structured bids (e.g., separating "Implementation Plan" from "Confidence Score"), making it easier for both code and other agents to process.
+
+## 7. Production Reality Check & Recommendations
+
+### 7.1 When to Use The Agora
+This pattern is complex. For static workflows where you know the agents ahead of time, use **Router (Chapter 2)** or **Supervisor (Chapter 7)**. Use The Agora only when:
+*   The worker pool is dynamic (agents join/leave).
+*   Cost/Latency tradeoffs vary per request.
+*   You want to simulate a competitive environment (e.g., multi-model voting).
+
+### 7.2 Recommended Demo Topic: "The Code Review Marketplace"
+To demonstrate value without over-engineering, the example should feature:
+1.  **Requester:** A "Pull Request Manager" needing a review.
+2.  **Bidder A ("The Linter"):** Fast, cheap, deterministic (Python tools).
+3.  **Bidder B ("The Security Auditor"):** Slow, expensive, deep (LLM).
+4.  **Scenario:** The Marketplace selects Bidder A for "style fixes" but Bidder B for "auth logic," demonstrating dynamic selection based on context.
+
+### 7.3 Production Requirements (What's Missing)
+To make this system production-ready, you would need:
+1.  **Durable Message Bus:** Replace `asyncio.Queue` with Redis Streams, RabbitMQ, or NATS to handle process crashes.
+2.  **Distributed Tracing:** Implementing OpenTelemetry (Logfire) is critical to visualize the async fan-out.
+3.  **Economic Layer:** A real marketplace needs quota tracking, "credits," or rate limiting to prevent "Winner's Curse" (agents over-promising).
+4.  **Deadlock Prevention:** Circuit breakers for recursive RFPs (agents hiring agents hiring agents).

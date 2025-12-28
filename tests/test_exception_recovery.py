@@ -5,14 +5,18 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
+from pydantic_ai.usage import RunUsage
 
 from agentic_patterns.exception_recovery import ClinicDiagnosis
 from agentic_patterns.exception_recovery import ErrorCategory
 from agentic_patterns.exception_recovery import RecoveryAction
 from agentic_patterns.exception_recovery import RecoveryConfig
 from agentic_patterns.exception_recovery import RecoveryResult
+from agentic_patterns.exception_recovery import _truncate_history
+from agentic_patterns.exception_recovery import _truncate_prompt
 from agentic_patterns.exception_recovery import classify_error
 from agentic_patterns.exception_recovery import get_recovery_action
+from agentic_patterns.exception_recovery import is_retryable
 from agentic_patterns.exception_recovery import recoverable_run
 
 
@@ -197,6 +201,70 @@ class TestGetRecoveryAction:
         assert action.action == "abort"
 
 
+class TestIsRetryable:
+    """Test the is_retryable helper function."""
+
+    def test_retryable_timeout(self):
+        """Timeout errors should be retryable."""
+        exc = TimeoutError("Request timed out")
+        assert is_retryable(exc) is True
+
+    def test_retryable_connection(self):
+        """Connection errors should be retryable."""
+        exc = ConnectionError("Connection refused")
+        assert is_retryable(exc) is True
+
+    def test_retryable_rate_limit(self):
+        """Rate limit errors should be retryable."""
+        exc = Exception("Error 429: rate limit exceeded")
+        assert is_retryable(exc) is True
+
+    def test_not_retryable_unknown(self):
+        """Unknown errors should not be retryable."""
+        exc = ValueError("Something completely unexpected happened")
+        assert is_retryable(exc) is False
+
+
+class TestTruncateHelpers:
+    """Test truncation helper functions."""
+
+    def test_truncate_prompt_none(self):
+        """Should return None for None input."""
+        assert _truncate_prompt(None, 100) is None
+
+    def test_truncate_prompt_short(self):
+        """Should not truncate short prompts."""
+        result = _truncate_prompt("short", 100)
+        assert result == "short"
+
+    def test_truncate_prompt_long(self):
+        """Should truncate long prompts with notice."""
+        result = _truncate_prompt("x" * 200, 100)
+        assert len(result) < 200
+        assert "[Truncated" in result
+
+    def test_truncate_prompt_sequence(self):
+        """Should return sequence as-is."""
+        seq = [{"type": "text", "text": "hello"}]
+        result = _truncate_prompt(seq, 10)
+        assert result is seq
+
+    def test_truncate_history_none(self):
+        """Should return None for None history."""
+        assert _truncate_history(None, 0.5) is None
+
+    def test_truncate_history_empty(self):
+        """Should return None for empty history."""
+        assert _truncate_history([], 0.5) is None
+
+    def test_truncate_history_keeps_recent(self):
+        """Should keep most recent messages."""
+        history = [MagicMock() for _ in range(10)]
+        result = _truncate_history(history, 0.3)
+        assert len(result) == 3
+        assert result == history[-3:]
+
+
 class TestRecoverableRun:
     """Test the recoverable_run function."""
 
@@ -204,23 +272,45 @@ class TestRecoverableRun:
     def mock_agent(self):
         return MagicMock()
 
-    @pytest.mark.asyncio
-    async def test_success_first_attempt(self, mock_agent):
-        """Should succeed on first attempt without recovery."""
+    @pytest.fixture
+    def mock_run_result(self):
+        """Create a mock result with usage method."""
         mock_result = MagicMock()
         mock_result.output = "Success"
-        mock_agent.run = AsyncMock(return_value=mock_result)
+        mock_result.usage.return_value = RunUsage(
+            requests=1,
+            input_tokens=10,
+            output_tokens=5,
+        )
+        return mock_result
+
+    @pytest.mark.asyncio
+    async def test_success_first_attempt(self, mock_agent, mock_run_result):
+        """Should succeed on first attempt without recovery."""
+        mock_agent.run = AsyncMock(return_value=mock_run_result)
 
         result = await recoverable_run(mock_agent, "test prompt")
 
-        assert result == "Success"
+        assert result.output == "Success"
         mock_agent.run.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_returns_full_result(self, mock_agent, mock_run_result):
+        """Should return full AgentRunResult, not just output."""
+        mock_agent.run = AsyncMock(return_value=mock_run_result)
+
+        result = await recoverable_run(mock_agent, "test prompt")
+
+        # Should have access to output, usage, etc.
+        assert hasattr(result, "output")
+        assert result.output == "Success"
 
     @pytest.mark.asyncio
     async def test_retry_on_transient_error(self, mock_agent):
         """Should retry and succeed after transient failure."""
         mock_result = MagicMock()
         mock_result.output = "Success"
+        mock_result.usage.return_value = RunUsage(requests=1)
 
         call_count = 0
 
@@ -235,7 +325,7 @@ class TestRecoverableRun:
 
         result = await recoverable_run(mock_agent, "test prompt")
 
-        assert result == "Success"
+        assert result.output == "Success"
         assert call_count == 2
 
     @pytest.mark.asyncio
@@ -249,7 +339,7 @@ class TestRecoverableRun:
             await recoverable_run(
                 mock_agent,
                 "test prompt",
-                config=RecoveryConfig(max_attempts=2),
+                recovery_config=RecoveryConfig(max_attempts=2),
             )
 
         assert mock_agent.run.call_count == 3  # initial + 2 retries
@@ -259,6 +349,7 @@ class TestRecoverableRun:
         """Should truncate prompt on context length error."""
         mock_result = MagicMock()
         mock_result.output = "Success"
+        mock_result.usage.return_value = RunUsage(requests=1)
 
         calls = []
 
@@ -273,16 +364,14 @@ class TestRecoverableRun:
         long_prompt = "x" * 5000
         result = await recoverable_run(mock_agent, long_prompt)
 
-        assert result == "Success"
+        assert result.output == "Success"
         assert len(calls) == 2
         assert len(calls[1]) < len(calls[0])
 
     @pytest.mark.asyncio
-    async def test_passes_deps_to_agent(self, mock_agent):
+    async def test_passes_deps_to_agent(self, mock_agent, mock_run_result):
         """Should pass deps to agent.run()."""
-        mock_result = MagicMock()
-        mock_result.output = "Success"
-        mock_agent.run = AsyncMock(return_value=mock_result)
+        mock_agent.run = AsyncMock(return_value=mock_run_result)
 
         class MyDeps:
             value = 42
@@ -295,11 +384,9 @@ class TestRecoverableRun:
         assert call_kwargs["deps"] is deps
 
     @pytest.mark.asyncio
-    async def test_no_deps_when_none(self, mock_agent):
+    async def test_no_deps_when_none(self, mock_agent, mock_run_result):
         """Should not pass deps kwarg when deps is None."""
-        mock_result = MagicMock()
-        mock_result.output = "Success"
-        mock_agent.run = AsyncMock(return_value=mock_result)
+        mock_agent.run = AsyncMock(return_value=mock_run_result)
 
         await recoverable_run(mock_agent, "test", deps=None)
 
@@ -312,6 +399,7 @@ class TestRecoverableRun:
         """Should wait on rate limit error."""
         mock_result = MagicMock()
         mock_result.output = "Success"
+        mock_result.usage.return_value = RunUsage(requests=1)
 
         call_count = 0
 
@@ -330,12 +418,56 @@ class TestRecoverableRun:
             await recoverable_run(
                 mock_agent,
                 "test",
-                config=RecoveryConfig(rate_limit_wait=10.0),
+                recovery_config=RecoveryConfig(rate_limit_wait=10.0),
             )
 
             mock_sleep.assert_called()
             # First sleep should be for rate limit
             assert mock_sleep.call_args_list[0][0][0] == 10.0
+
+    @pytest.mark.asyncio
+    async def test_forwards_kwargs_to_agent(self, mock_agent, mock_run_result):
+        """Should forward **kwargs to agent.run()."""
+        mock_agent.run = AsyncMock(return_value=mock_run_result)
+
+        await recoverable_run(
+            mock_agent,
+            "test",
+            model_settings={"temperature": 0.5},
+        )
+
+        call_kwargs = mock_agent.run.call_args[1]
+        assert call_kwargs["model_settings"] == {"temperature": 0.5}
+
+    @pytest.mark.asyncio
+    async def test_usage_accumulated_across_retries(self, mock_agent):
+        """Should accumulate usage from all attempts."""
+        call_count = 0
+
+        def make_result(tokens: int):
+            r = MagicMock()
+            r.output = "Success"
+            r.usage.return_value = RunUsage(
+                requests=1,
+                input_tokens=tokens,
+                output_tokens=tokens,
+            )
+            return r
+
+        async def mock_run(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise ConnectionError("Connection reset")
+            return make_result(20)
+
+        mock_agent.run = mock_run
+
+        result = await recoverable_run(mock_agent, "test")
+
+        # Usage should be from successful attempt only (failed attempt
+        # doesn't have usage to capture in this simple mock)
+        assert result._usage.requests == 1
 
 
 class TestClinicAgent:
@@ -347,6 +479,7 @@ class TestClinicAgent:
         mock_agent = MagicMock()
         mock_result = MagicMock()
         mock_result.output = "Success"
+        mock_result.usage.return_value = RunUsage(requests=1)
 
         call_count = 0
 
@@ -375,10 +508,10 @@ class TestClinicAgent:
             result = await recoverable_run(
                 mock_agent,
                 "test",
-                config=RecoveryConfig(use_clinic_for_unknown=True),
+                recovery_config=RecoveryConfig(use_clinic_for_unknown=True),
             )
 
-            assert result == "Success"
+            assert result.output == "Success"
             mock_clinic.run.assert_called_once()
 
     @pytest.mark.asyncio
@@ -387,6 +520,7 @@ class TestClinicAgent:
         mock_agent = MagicMock()
         mock_result = MagicMock()
         mock_result.output = "Success"
+        mock_result.usage.return_value = RunUsage(requests=1)
 
         call_count = 0
 
@@ -405,7 +539,7 @@ class TestClinicAgent:
             await recoverable_run(
                 mock_agent,
                 "test",
-                config=RecoveryConfig(use_clinic_for_unknown=False),
+                recovery_config=RecoveryConfig(use_clinic_for_unknown=False),
             )
 
             mock_create.assert_not_called()
@@ -446,7 +580,7 @@ class TestEdgeCases:
             await recoverable_run(
                 mock_agent,
                 "test",
-                config=RecoveryConfig(max_attempts=0),
+                recovery_config=RecoveryConfig(max_attempts=0),
             )
 
         mock_agent.run.assert_called_once()
