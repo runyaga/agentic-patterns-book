@@ -193,6 +193,7 @@ Before marking a pattern as complete, verify:
 - [ ] README.md usage example added
 - [ ] pattern-implementation.md status updated to DONE
 - [ ] Any new lessons added to LESSONS.md
+- [ ] `uv run mkdocs build --strict` passes locally
 
 ## Style Guidelines
 
@@ -291,3 +292,18 @@ This keeps docs in sync with source code automatically.
 **Note**: Snippets inside mermaid fences don't work well due to how
 pymdownx.superfences wraps content. Put mermaid diagrams inline in docs,
 matching the diagram in the Python module docstring.
+
+### Source Code Links
+
+Link to source files using absolute GitHub URLs, not relative paths:
+
+```markdown
+# WRONG - mkdocs treats this as a doc file reference
+[Source Code](../../src/agentic_patterns/foo.py)
+
+# RIGHT - absolute GitHub URL
+Source: [`src/agentic_patterns/foo.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/foo.py)
+```
+
+Relative paths to `.py` files fail `mkdocs build --strict` because mkdocs
+looks for them in the docs directory.

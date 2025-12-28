@@ -67,6 +67,12 @@ nav:
       - Multi-Agent: patterns/07-multi-agent.md
       - Memory: patterns/08-memory.md
       - Learning: patterns/09-learning.md
+      - MCP Integration: patterns/10-mcp-integration.md
+      - Goal Monitoring: patterns/11-goal-monitoring.md
+      - Exception Recovery: patterns/12-exception-recovery.md
       - Human-in-Loop: patterns/13-human-in-loop.md
       - Knowledge Retrieval: patterns/14-knowledge-retrieval.md
+      - Agent Marketplace: patterns/15-agent-marketplace.md
+      - Reasoning Weaver: patterns/17-reasoning-weaver.md
+      - Domain Exploration: patterns/21-domain-exploration.md
   - Reproduce This: reproduce.md
