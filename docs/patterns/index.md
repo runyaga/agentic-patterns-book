@@ -18,8 +18,14 @@ See [Idioms](../idioms.md) for pydantic-ai, pydantic_graph, and pydantic-evals p
 | 7 | [Multi-Agent](07-multi-agent.md) | Coordinate specialized agents |
 | 8 | [Memory](08-memory.md) | Maintain conversation context |
 | 9 | [Learning](09-learning.md) | Improve through experience |
+| 10 | [MCP Integration](10-mcp-integration.md) | Extensibility via MCP tools |
+| 11 | [Goal Monitoring](11-goal-monitoring.md) | Proactive state monitoring |
+| 12 | [Exception Recovery](12-exception-recovery.md) | Robust error handling |
 | 13 | [Human-in-the-Loop](13-human-in-loop.md) | Integrate human oversight |
 | 14 | [Knowledge Retrieval](14-knowledge-retrieval.md) | RAG pattern |
+| 15 | [Agent Marketplace](15-agent-marketplace.md) | (Spec) Decentralized bidding |
+| 17 | [Reasoning Weaver](17-reasoning-weaver.md) | (Spec) Tree of Thoughts |
+| 21 | [Domain Exploration](21-domain-exploration.md) | (Spec) Knowledge graph mapping |
 
 ## Pattern Complexity
 
@@ -31,18 +37,27 @@ Ch 1: Prompt Chaining (foundation)
   +-> Ch 2: Routing
   +-> Ch 3: Parallelization
   +-> Ch 4: Reflection
+  |   |
+  |   +-> Ch 12: Exception Recovery (depends on Ch 4 logic)
+  |   +-> Ch 17: Reasoning Weaver (advanced reflection)
   |
   +-> Ch 5: Tool Use (depends on Ch 1-2)
+      |
+      +-> Ch 10: MCP Integration (extends Ch 5)
       |
       +-> Ch 6: Planning (depends on Ch 1-5)
           |
           +-> Ch 7: Multi-Agent (depends on Ch 1-6)
               |
+              +-> Ch 11: Goal Monitoring (autonomous loop)
               +-> Ch 13: Human-in-Loop (depends on Ch 1-7)
+              +-> Ch 15: Agent Marketplace (decentralized multi-agent)
 
 Ch 8: Memory (standalone, depends on Ch 1)
 Ch 9: Learning (depends on Ch 4, 8)
 Ch 14: Knowledge Retrieval (depends on Ch 5)
+    |
+    +-> Ch 21: Domain Exploration (active retrieval)
 ```
 
 ## Running Examples

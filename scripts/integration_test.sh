@@ -40,7 +40,8 @@ while [[ $# -gt 0 ]]; do
             echo "  prompt_chaining, routing, parallelization, reflection,"
             echo "  tool_use, planning, multi_agent, memory, learning,"
             echo "  human_in_loop, knowledge_retrieval, resource_aware,"
-            echo "  guardrails, evaluation, prioritization"
+            echo "  guardrails, evaluation, prioritization, exception_recovery,"
+            echo "  mcp_integration, goal_monitoring"
             exit 0
             ;;
         *)
@@ -66,6 +67,9 @@ ALL_PATTERNS=(
     guardrails
     evaluation
     prioritization
+    exception_recovery
+    mcp_integration
+    goal_monitoring
 )
 
 # If single pattern specified, validate and use it

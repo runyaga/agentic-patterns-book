@@ -231,6 +231,48 @@ replanner_agent = Agent(model, output_type=Plan, system_prompt="...")
 synthesizer_agent = Agent(model, output_type=str, system_prompt="...")
 ```
 
+### Exception Recovery (Deterministic Heuristics)
+
+For 90% of failures (timeouts, rate limits, context overflow), a simple regex
+check on the exception message is faster, cheaper, and more reliable than
+sending the stack trace to an LLM "Clinic Agent".
+
+**Pattern:**
+1. Check exception type/message against known patterns.
+2. If matched, apply hardcoded fix (backoff, truncate, retry).
+3. Only invoke LLM Diagnosis if the error is truly `UNKNOWN`.
+
+```python
+# Fast path - no tokens used
+if "rate limit" in str(exc).lower():
+    return RecoveryAction(action="wait_and_retry", wait=60)
+
+# Slow path - only for weird errors
+return await clinic_agent.run(f"Diagnose: {exc}")
+```
+
+### MCP Integration (Native Support)
+
+Don't over-engineer MCP connections. `pydantic-ai` handles the complexity of
+connection management, tool discovery, and request forwarding natively.
+
+**Anti-Pattern (Custom Connector):**
+```python
+class UniversalConnector:
+    def connect(self): ...
+    def list_tools(self): ...
+```
+
+**Idiomatic Pattern:**
+```python
+server = MCPServerStdio("python", args=["server.py"])
+agent = Agent(model, toolsets=[server])
+```
+
+Use `tool_prefix` to namespace tools from different servers (e.g., `fs_read`
+vs `db_read`) and `process_tool_call` to inject agent dependencies into the
+MCP request context.
+
 ## Coverage Strategies
 
 ### Test both integration and unit levels

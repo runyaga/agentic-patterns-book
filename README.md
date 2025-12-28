@@ -66,12 +66,17 @@ uv venv && uv pip install -e ".[dev]" --python .venv/bin/python
 | [Multi-Agent](src/agentic_patterns/multi_agent.py) | 7 | Supervisor and network collaboration |
 | [Memory](src/agentic_patterns/memory.py) | 8 | Buffer, window, and summary memory |
 | [Learning](src/agentic_patterns/learning.py) | 9 | Experience-based adaptation |
+| [MCP Integration](src/agentic_patterns/mcp_integration.py) | 10 | Model Context Protocol tool usage |
+| [Exception Recovery](src/agentic_patterns/exception_recovery.py) | 12 | Phoenix Protocol: Clinic agent for error diagnosis |
 | [Human-in-Loop](src/agentic_patterns/human_in_loop.py) | 13 | Escalation and approval workflows |
 | [Knowledge Retrieval](src/agentic_patterns/knowledge_retrieval.py) | 14 | RAG pipeline |
+| [Agent Marketplace](docs/patterns/15-agent-marketplace.md) | 15 | (Spec) The Agora: Decentralized bidding |
 | [Resource-Aware](src/agentic_patterns/resource_aware.py) | 16 | Budget management and model selection |
+| [Reasoning Weaver](docs/patterns/17-reasoning-weaver.md) | 17 | (Spec) Tree of Thoughts topology |
 | [Guardrails](src/agentic_patterns/guardrails.py) | 18 | Input/output validation and safety |
 | [Evaluation](src/agentic_patterns/evaluation.py) | 19 | Performance metrics and monitoring |
 | [Prioritization](src/agentic_patterns/prioritization.py) | 20 | Task ranking and priority queues |
+| [Domain Exploration](docs/patterns/21-domain-exploration.md) | 21 | (Spec) The Cartographer: Knowledge graph mapping |
 
 ## Development
 
