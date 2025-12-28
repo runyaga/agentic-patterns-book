@@ -122,14 +122,3 @@ enhancements:
 - **P4: OKR Hierarchy** - Objectives with multiple Key Results
 - **P5: Observability** - Logfire integration for structured logging
 
-## API Reference
-
-::: agentic_patterns.goal_monitoring
-    options:
-      show_root_heading: true
-      members:
-        - Goal
-        - GoalStatus
-        - GoalMonitor
-        - run_goal_monitor
-        - on_escalate

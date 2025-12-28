@@ -27,7 +27,7 @@ This is a learning exercise, not a production recommendation.
 
 ## What is this?
 
-A Python port of 15 agentic AI patterns from the **Gulli** book:
+A Python port of 21 agentic AI patterns from the **Gulli** book:
 
 > *Agentic Design Patterns: A Hands-On Guide to Building Intelligent Systems*
 > by Antonio Gulli (Springer, 2025)
@@ -56,19 +56,15 @@ See [Getting Started](getting-started.md) for full setup instructions.
 
 ## Patterns Overview
 
-| Chapter | Pattern | Description |
-|---------|---------|-------------|
-| 1 | [Prompt Chaining](patterns/01-prompt-chaining.md) | Sequential LLM calls |
-| 2 | [Routing](patterns/02-routing.md) | Intent classification |
-| 3 | [Parallelization](patterns/03-parallelization.md) | Concurrent execution |
-| 4 | [Reflection](patterns/04-reflection.md) | Self-improvement loops |
-| 5 | [Tool Use](patterns/05-tool-use.md) | External tool integration |
-| 6 | [Planning](patterns/06-planning.md) | Goal decomposition |
-| 7 | [Multi-Agent](patterns/07-multi-agent.md) | Agent collaboration |
-| 8 | [Memory](patterns/08-memory.md) | Conversation context |
-| 9 | [Learning](patterns/09-learning.md) | Experience-based adaptation |
-| 13 | [Human-in-Loop](patterns/13-human-in-loop.md) | Human oversight |
-| 14 | [Knowledge Retrieval](patterns/14-knowledge-retrieval.md) | RAG pipelines |
+18 implemented patterns, 3 specifications. See [full pattern index](patterns/index.md).
+
+| Category | Patterns |
+|----------|----------|
+| **Foundation** | [Prompt Chaining](patterns/01-prompt-chaining.md), [Routing](patterns/02-routing.md), [Parallelization](patterns/03-parallelization.md) |
+| **Reasoning** | [Reflection](patterns/04-reflection.md), [Tool Use](patterns/05-tool-use.md), [Planning](patterns/06-planning.md) |
+| **Coordination** | [Multi-Agent](patterns/07-multi-agent.md), [Memory](patterns/08-memory.md), [Learning](patterns/09-learning.md) |
+| **Integration** | [MCP Integration](patterns/10-mcp-integration.md), [Goal Monitoring](patterns/11-goal-monitoring.md), [Exception Recovery](patterns/12-exception-recovery.md) |
+| **Advanced** | [Human-in-Loop](patterns/13-human-in-loop.md), [Guardrails](patterns/18-guardrails.md), [Evaluation](patterns/19-evaluation-monitoring.md), +6 more |
 
 ## Reproduce This
 
