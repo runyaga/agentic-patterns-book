@@ -63,19 +63,52 @@ Manages the monitoring lifecycle:
 3. **RemediateNode**: Calls the remediation agent with the goal's hint,
    escalates on failure, then returns to CheckNode to re-verify
 
-## When to Use (vs Cron)
+## Production Reality Check
 
-This pattern is similar to a cron job with health checks. Use this table to decide:
+### When to Use
 
 | Scenario | Use Cron / Systemd | Use Goal Monitor |
 | :--- | :--- | :--- |
 | **Logic** | Static thresholds (Disk > 90%) | Dynamic/Contextual reasoning |
 | **Action** | Fixed scripts (`systemctl restart`) | Agentic remediation (read logs, plan fix) |
-| **Trigger** | Time-based only | State-based (can run continuously) |
-| **Cost** | Free (shell scripts) | Non-zero (LLM calls for remediation) |
-| **Complexity** | Low | Medium (requires async loop) |
+| **Trigger** | Time-based only | State-based (continuous) |
+| **Cost** | Free (shell scripts) | Non-zero (LLM calls) |
+| **Complexity** | Low | Medium (async loop) |
 
-**Verdict:** For 90% of infrastructure monitoring, use existing tools (Prometheus, Datadog). Use this pattern when the remediation requires *intelligence* (e.g., "Fix the typo in the README" or "Refactor this function if it gets too complex").
+- *Comparison*: For static thresholds and fixed scripts, use cron + alerts +
+  runbooks instead
+
+### When NOT to Use
+- Static threshold monitoring (use Prometheus, Datadog, or cron)
+- Remediation is a fixed script that doesn't need intelligence
+- Cost of LLM calls for monitoring exceeds value of intelligent remediation
+- System reliability requirements demand battle-tested monitoring tools
+- *Anti-pattern*: Routine log rotation or disk cleanup tasks—deterministic
+  scripts are more reliable and cheaper
+
+**Verdict:** For 90% of infrastructure monitoring, use existing tools. Use Goal
+Monitoring when remediation requires *intelligence* (e.g., "Fix the typo in the
+README" or "Refactor this function if it gets too complex").
+
+### Production Considerations
+- **Escalation**: Implement escalation for repeated failures. Don't let the
+  agent retry forever—alert humans when remediation fails N times.
+- **State persistence**: Save monitoring state to disk/DB so monitoring can
+  resume after process restarts without losing context.
+- **Resource limits**: Set timeouts on evaluators and remediation. Unbounded
+  LLM calls can be expensive and slow.
+- **Change management**: Guard against agent-triggered changes without approvals.
+  High-stakes remediations should require human sign-off.
+- **Observability**: Log every check, every gap detected, every remediation
+  attempt. This is your audit trail for "why did the system change X?"
+- **Graceful shutdown**: Handle SIGTERM properly—complete current check cycle
+  before exiting.
+
+## Example
+
+```bash
+.venv/bin/python -m agentic_patterns.goal_monitoring
+```
 
 ## Production TODOs
 

@@ -46,8 +46,39 @@ g.edge_from(evaluate_thought).to(collect_thoughts)
 
 ## Production Reality Check
 
-Tree of Thoughts is computationally expensive (Branching Factor $\times$ Depth = Token Explosion).
-*   **Recommendation**: Use a **Small Specialist Model** (e.g., `qwen3:4b`) for the `GeneratorAgent` to produce candidate steps quickly and cheaply.
-*   **Constraint**: Do not use this for open-ended chat or simple queries. Reserve it for verifiable problems requiring lookahead.
+### When to Use
+- Problem has a verifiable solution condition (can check if answer is correct)
+- Greedy decoding fails (choosing most likely next word leads to dead ends)
+- Lookahead and backtracking are valuable (puzzles, multi-step planning)
+- Example: "Game of 24"—use 4, 7, 8, 8 to make 24
+- *Comparison*: Single-shot or chain-of-thought prompting fails to explore
+  alternative paths; ToT enables systematic search
 
-```
+### When NOT to Use
+- Open-ended chat or creative writing (no way to score/prune branches)
+- Simple queries that single-shot handles well
+- Latency budget is tight (ToT is 10x-100x slower than standard calls)
+- Token budget is constrained (branching factor × depth = token explosion)
+- *Anti-pattern*: Summarization or customer support responses where "correctness"
+  is subjective and pruning criteria don't exist
+
+### Production Considerations
+- **Model selection**: Use small, fast models (e.g., `qwen3:4b`) for generation
+  steps. Use stronger models (or pure code) for evaluation. Route between them.
+- **Token budgeting**: Branching factor × depth = total tokens. Set strict
+  limits. Default to low values (branch=3, depth=3) and increase only if needed.
+- **Pruning aggressiveness**: Prune early to save cost. But too aggressive
+  pruning may discard the winning path. Tune per problem type.
+- **Evaluator quality**: Bad evaluators lead to bad pruning. Invest in robust
+  scoring logic—consider deterministic checks where possible. Without a good
+  evaluator, ToT degenerates into expensive random search.
+- **Caching**: Similar inputs may share explored subtrees. Cache promising paths
+  to avoid redundant search across related queries.
+- **Observability**: Log the full tree structure for debugging. "Why did it
+  choose this path?" is hard to answer without tree visualization.
+- **Fallback**: If ToT times out or exceeds budget, fall back to single-shot.
+  Don't fail completely just because exploration was expensive.
+
+## Example
+
+> **Note:** This pattern is in specification phase. No runnable example yet.

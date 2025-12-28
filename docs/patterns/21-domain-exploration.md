@@ -38,6 +38,41 @@ The architecture uses a cyclic `pydantic_graph` workflow:
 
 ## Production Reality Check
 
-*   **Scale**: Crawling a large repo requires strict boundaries (`max_depth`, `max_files`) to avoid infinite loops and token exhaustion.
-*   **Memory**: Large knowledge graphs should be persisted to disk (JSON/LanceDB) periodically, not held entirely in RAM.
-*   **Accuracy**: LLMs hallucinate relationships. For code, rely on AST (Abstract Syntax Tree) for ground truth whenever possible.
+### When to Use
+- Need autonomous discovery of unknown domain (new codebase, documentation set)
+- Want semantic understanding beyond keyword search (entity relationships)
+- Building knowledge graphs for structural queries (dependencies, call graphs)
+- Gap detection is valuable (find undocumented functions, orphan modules)
+- *Comparison*: For simple text search, grep/ctags/IDE indexers are faster and
+  cheaper; Cartographer adds value when semantic relationships matter
+
+### When NOT to Use
+- Corpus is small and can be indexed manually
+- Simple keyword search meets your needs
+- Real-time exploration isn't acceptable (crawling is slow)
+- Domain is well-understood and doesn't need discovery
+- *Anti-pattern*: Small repo where a README and tags answer most questions—
+  exploration overhead dominates the benefit
+
+### Production Considerations
+- **Boundaries**: Set strict `max_depth` and `max_files` limits. Unbounded
+  crawling is expensive and can loop infinitely on large repos.
+- **Memory management**: Large knowledge graphs should persist to disk
+  (JSON/LanceDB) periodically. Don't hold everything in RAM.
+- **AST-first accuracy**: LLMs hallucinate relationships. For code, use AST
+  (Abstract Syntax Tree) for ground truth (imports, class hierarchy). Use LLM
+  only for semantic summaries and conceptual relationships.
+- **Incremental updates**: Full re-crawl is expensive. Implement incremental
+  indexing for changed files only.
+- **Staleness**: Exploration snapshots drift quickly in active repos. Plan for
+  continuous updates or accept point-in-time limitations.
+- **Access controls**: Crawling proprietary repos risks data leakage. Implement
+  access controls and audit what's being indexed.
+- **Token budgeting**: Each file processed = LLM call for entity extraction.
+  Provide "dry run" mode to preview what would be crawled before committing.
+- **Visualization**: Knowledge graphs need visualization to be useful. Plan for
+  export to GraphViz, Neo4j, or similar tools.
+
+## Example
+
+> **Note:** This pattern is in specification phase. No runnable example yet.

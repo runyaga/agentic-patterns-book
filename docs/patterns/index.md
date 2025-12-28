@@ -24,7 +24,11 @@ See [Idioms](../idioms.md) for pydantic-ai, pydantic_graph, and pydantic-evals p
 | 13 | [Human-in-the-Loop](13-human-in-loop.md) | Integrate human oversight |
 | 14 | [Knowledge Retrieval](14-knowledge-retrieval.md) | RAG pattern |
 | 15 | [Agent Marketplace](15-agent-marketplace.md) | (Spec) Decentralized bidding |
+| 16 | [Resource Optimization](16-resource-optimization.md) | Cost/latency routing |
 | 17 | [Reasoning Weaver](17-reasoning-weaver.md) | (Spec) Tree of Thoughts |
+| 18 | [Guardrails](18-guardrails.md) | Safety and filtering |
+| 19 | [Evaluation & Monitoring](19-evaluation-monitoring.md) | Observability |
+| 20 | [Prioritization](20-prioritization.md) | Task scheduling |
 | 21 | [Domain Exploration](21-domain-exploration.md) | (Spec) Knowledge graph mapping |
 
 ## Pattern Complexity
@@ -58,6 +62,11 @@ Ch 9: Learning (depends on Ch 4, 8)
 Ch 14: Knowledge Retrieval (depends on Ch 5)
     |
     +-> Ch 21: Domain Exploration (active retrieval)
+
+Ch 16: Resource Optimization (depends on Ch 2 routing)
+Ch 18: Guardrails (standalone, applies to all patterns)
+Ch 19: Evaluation & Monitoring (standalone, applies to all patterns)
+Ch 20: Prioritization (depends on Ch 6 planning)
 ```
 
 ## Running Examples

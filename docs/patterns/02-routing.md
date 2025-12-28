@@ -42,11 +42,36 @@ Source: [`src/agentic_patterns/routing.py`](https://github.com/runyaga/agentic-p
 - **Workflow Automation**: Direct tasks to processors
 - **Content Moderation**: Route based on content type
 
-## When to Use
+## Production Reality Check
 
-- Multiple specialized handlers exist
+### When to Use
+- Multiple specialized handlers exist with distinct capabilities
 - Domain expertise varies significantly by query type
 - Fallback handling is needed for ambiguous requests (using confidence scores)
+- Request volume justifies the complexity of maintaining multiple handlers
+- *Comparison*: A single system prompt cannot adequately cover all domains, or
+  manual rules are too brittle to maintain
+
+### When NOT to Use
+- Single-purpose applications where all queries go to the same handler
+- When a system prompt can adequately cover all domains (simpler is better)
+- Low-volume applications where a generalist agent is "good enough"
+- When routing accuracy is critical but training data is limited
+- *Anti-pattern*: Support FAQ bot with <10 intents—use a single agent with
+  good prompting instead
+
+### Production Considerations
+- **Classification errors**: Monitor misrouted queries; log router decisions for
+  analysis. Consider human review for low-confidence classifications.
+- **Handler availability**: Implement circuit breakers if handlers can fail
+  independently. Fallback to a generalist handler when specialists are down.
+- **Latency**: Router adds one LLM call before the actual handler. For latency-
+  sensitive apps, consider caching common routes or using faster models for
+  classification.
+- **Observability**: Track routing distribution over time to detect drift or
+  new query patterns that need new handlers.
+- **Label drift**: Routing categories evolve as product changes. Re-evaluate
+  router training data periodically; stale labels cause systematic misroutes.
 
 ## Example
 

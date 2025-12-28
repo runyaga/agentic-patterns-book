@@ -31,11 +31,32 @@ Source: [`src/agentic_patterns/prompt_chaining.py`](https://github.com/runyaga/a
 - **Content Creation**: Outline -> Draft -> Refine
 - **Data Transformation**: Parse -> Process -> Format
 
-## When to Use
+## Production Reality Check
 
-- Tasks naturally decompose into sequential steps
-- Intermediate results need validation or structured formatting
-- Complex reasoning benefits from breaking down the problem
+### When to Use
+- Tasks naturally decompose into sequential steps with clear data dependencies
+- Intermediate results need validation or structured formatting before proceeding
+- Complex reasoning benefits from breaking down into smaller, verifiable steps
+- Pipeline-style workflows where each step transforms the output
+- *Comparison*: A single-shot prompt cannot handle the full task or produces
+  unreliable results
+
+### When NOT to Use
+- Single-shot queries that don't need intermediate processing
+- When latency is critical (each chain link adds a full LLM round-trip)
+- Simple transformations that could be done with string formatting or regex
+- When steps don't have meaningful dependencies (use Parallelization instead)
+- *Anti-pattern*: Chaining deterministic transformations that don't need LLM
+  reasoning (use plain code instead)
+
+### Production Considerations
+- **Observability**: Log each chain step separately for debugging failed pipelines
+- **Failure handling**: Decide retry strategy—per-step retry vs. full-chain restart
+- **Cost**: Each step is a separate API call; multiply token costs by chain length
+- **Latency**: Total latency = sum of all step latencies; consider caching for
+  repeated inputs
+- **State management**: Consider persisting intermediate results for long chains
+  to enable resumption after failures
 
 ## Example
 
