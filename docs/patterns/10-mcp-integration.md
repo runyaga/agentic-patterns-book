@@ -1,6 +1,6 @@
 # MCP Integration (Tool Extensibility)
 
-**Chapter 10** · [Source Code](../../src/agentic_patterns/mcp_integration.py)
+Source: [`src/agentic_patterns/mcp_integration.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/mcp_integration.py)
 
 The **MCP Integration** pattern demonstrates how to use the Model Context Protocol (MCP) to extend agents with external tools. Instead of hardcoding tools, this pattern allows agents to connect to local or remote servers (via stdio or HTTP/SSE) to dynamically discover capabilities.
 

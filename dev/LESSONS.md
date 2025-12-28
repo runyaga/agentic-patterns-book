@@ -273,6 +273,32 @@ Use `tool_prefix` to namespace tools from different servers (e.g., `fs_read`
 vs `db_read`) and `process_tool_call` to inject agent dependencies into the
 MCP request context.
 
+## Documentation
+
+### Always build mkdocs locally before push
+
+The CI runs `mkdocs build --strict` which fails on warnings. Always validate
+locally before pushing:
+
+```bash
+uv run mkdocs build --strict
+```
+
+Common failures:
+- **Broken source links**: Use absolute GitHub URLs for source file links, not
+  relative paths like `../../src/...`. MkDocs treats relative `.py` links as
+  documentation files.
+- **Missing nav entries**: New pages in `docs/patterns/` must be added to the
+  `nav:` section in `mkdocs.yml`.
+
+```markdown
+# WRONG - mkdocs can't resolve relative paths to source files
+[Source Code](../../src/agentic_patterns/foo.py)
+
+# RIGHT - absolute GitHub URL
+Source: [`src/agentic_patterns/foo.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/foo.py)
+```
+
 ## Coverage Strategies
 
 ### Test both integration and unit levels
