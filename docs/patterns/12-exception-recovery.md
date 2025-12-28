@@ -140,15 +140,3 @@ for attempt in range(max_attempts):
 .venv/bin/python -m agentic_patterns.exception_recovery
 ```
 
-## API Reference
-
-::: agentic_patterns.exception_recovery
-    options:
-      show_root_heading: true
-      members:
-        - ErrorCategory
-        - RecoveryConfig
-        - recoverable_run
-        - is_retryable
-        - classify_error
-        - get_recovery_action

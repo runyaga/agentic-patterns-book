@@ -7,29 +7,51 @@ See [Idioms](../idioms.md) for pydantic-ai, pydantic_graph, and pydantic-evals p
 
 ## Pattern Index
 
-| Chapter | Pattern | Description |
-|---------|---------|-------------|
-| 1 | [Prompt Chaining](01-prompt-chaining.md) | Chain LLM calls sequentially |
-| 2 | [Routing](02-routing.md) | Classify and route to handlers |
-| 3 | [Parallelization](03-parallelization.md) | Execute tasks concurrently |
-| 4 | [Reflection](04-reflection.md) | Self-evaluate and improve |
-| 5 | [Tool Use](05-tool-use.md) | Interact with external tools |
-| 6 | [Planning](06-planning.md) | Decompose goals into steps |
-| 7 | [Multi-Agent](07-multi-agent.md) | Coordinate specialized agents |
-| 8 | [Memory](08-memory.md) | Maintain conversation context |
-| 9 | [Learning](09-learning.md) | Improve through experience |
-| 10 | [MCP Integration](10-mcp-integration.md) | Extensibility via MCP tools |
-| 11 | [Goal Monitoring](11-goal-monitoring.md) | Proactive state monitoring |
-| 12 | [Exception Recovery](12-exception-recovery.md) | Robust error handling |
-| 13 | [Human-in-the-Loop](13-human-in-loop.md) | Integrate human oversight |
-| 14 | [Knowledge Retrieval](14-knowledge-retrieval.md) | RAG pattern |
-| 15 | [Agent Marketplace](15-agent-marketplace.md) | (Spec) Decentralized bidding |
-| 16 | [Resource Optimization](16-resource-optimization.md) | Cost/latency routing |
-| 17 | [Reasoning Weaver](17-reasoning-weaver.md) | (Spec) Tree of Thoughts |
-| 18 | [Guardrails](18-guardrails.md) | Safety and filtering |
-| 19 | [Evaluation & Monitoring](19-evaluation-monitoring.md) | Observability |
-| 20 | [Prioritization](20-prioritization.md) | Task scheduling |
-| 21 | [Domain Exploration](21-domain-exploration.md) | (Spec) Knowledge graph mapping |
+### Foundation
+
+| Ch | Pattern | Description | Status |
+|----|---------|-------------|--------|
+| 1 | [Prompt Chaining](01-prompt-chaining.md) | Chain LLM calls sequentially | ✅ |
+| 2 | [Routing](02-routing.md) | Classify and route to handlers | ✅ |
+| 3 | [Parallelization](03-parallelization.md) | Execute tasks concurrently | ✅ |
+
+### Reasoning
+
+| Ch | Pattern | Description | Status |
+|----|---------|-------------|--------|
+| 4 | [Reflection](04-reflection.md) | Self-evaluate and improve | ✅ |
+| 5 | [Tool Use](05-tool-use.md) | Interact with external tools | ✅ |
+| 6 | [Planning](06-planning.md) | Decompose goals into steps | ✅ |
+
+### Coordination
+
+| Ch | Pattern | Description | Status |
+|----|---------|-------------|--------|
+| 7 | [Multi-Agent](07-multi-agent.md) | Coordinate specialized agents | ✅ |
+| 8 | [Memory](08-memory.md) | Maintain conversation context | ✅ |
+| 9 | [Learning](09-learning.md) | Improve through experience | ✅ |
+
+### Integration
+
+| Ch | Pattern | Description | Status |
+|----|---------|-------------|--------|
+| 10 | [MCP Integration](10-mcp-integration.md) | Extensibility via MCP tools | ✅ |
+| 11 | [Goal Monitoring](11-goal-monitoring.md) | Proactive state monitoring | ✅ |
+| 12 | [Exception Recovery](12-exception-recovery.md) | Robust error handling | ✅ |
+
+### Advanced
+
+| Ch | Pattern | Description | Status |
+|----|---------|-------------|--------|
+| 13 | [Human-in-the-Loop](13-human-in-loop.md) | Integrate human oversight | ✅ |
+| 14 | [Knowledge Retrieval](14-knowledge-retrieval.md) | RAG pattern | ✅ |
+| 15 | [Agent Marketplace](15-agent-marketplace.md) | Decentralized bidding | 📋 Spec |
+| 16 | [Resource Optimization](16-resource-optimization.md) | Cost/latency routing | ✅ |
+| 17 | [Reasoning Weaver](17-reasoning-weaver.md) | Tree of Thoughts | 📋 Spec |
+| 18 | [Guardrails](18-guardrails.md) | Safety and filtering | ✅ |
+| 19 | [Evaluation & Monitoring](19-evaluation-monitoring.md) | Observability | ✅ |
+| 20 | [Prioritization](20-prioritization.md) | Task scheduling | ✅ |
+| 21 | [Domain Exploration](21-domain-exploration.md) | Knowledge graph mapping | 📋 Spec |
 
 ## Pattern Complexity
 
