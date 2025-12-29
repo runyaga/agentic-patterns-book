@@ -79,7 +79,8 @@ nav:
           - Knowledge Retrieval: patterns/14-knowledge-retrieval.md
           - Agent Marketplace: patterns/15-agent-marketplace.md
           - Resource Optimization: patterns/16-resource-optimization.md
-          - Reasoning Weaver: patterns/17-reasoning-weaver.md
+          - Thought Candidates: patterns/17a-thought-candidates.md
+          - Tree of Thoughts: patterns/17b-tree-of-thoughts.md
           - Guardrails: patterns/18-guardrails.md
           - Evaluation & Monitoring: patterns/19-evaluation-monitoring.md
           - Prioritization: patterns/20-prioritization.md

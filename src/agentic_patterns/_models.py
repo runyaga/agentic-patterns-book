@@ -9,6 +9,12 @@ from pydantic_ai.providers.openai import OpenAIProvider
 DEFAULT_MODEL = os.environ.get("REQUIRED_MODEL", "gpt-oss:20b")
 DEFAULT_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434") + "/v1"
 
+# Model tiers for patterns that benefit from different model sizes
+# FAST_MODEL: Quick generation (e.g., thought candidates)
+# STRONG_MODEL: Deep reasoning (e.g., evaluation, synthesis)
+FAST_MODEL = os.environ.get("FAST_MODEL", DEFAULT_MODEL)
+STRONG_MODEL = os.environ.get("STRONG_MODEL", DEFAULT_MODEL)
+
 # Configure logfire if token is set
 if os.environ.get("LOGFIRE_TOKEN"):
     logfire.configure(
@@ -38,3 +44,21 @@ def get_model(
             api_key="ollama",
         ),
     )
+
+
+def get_fast_model(base_url: str | None = None) -> OpenAIChatModel:
+    """Get fast model for quick generation tasks.
+
+    Uses FAST_MODEL env var, defaults to REQUIRED_MODEL.
+    Recommended: qwen3:4b for speed.
+    """
+    return get_model(model_name=FAST_MODEL, base_url=base_url)
+
+
+def get_strong_model(base_url: str | None = None) -> OpenAIChatModel:
+    """Get strong model for deep reasoning tasks.
+
+    Uses STRONG_MODEL env var, defaults to REQUIRED_MODEL.
+    Recommended: gpt-oss:20b for quality.
+    """
+    return get_model(model_name=STRONG_MODEL, base_url=base_url)

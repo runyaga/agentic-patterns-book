@@ -47,7 +47,8 @@ See [Idioms](../idioms.md) for pydantic-ai, pydantic_graph, and pydantic-evals p
 | 14 | [Knowledge Retrieval](14-knowledge-retrieval.md) | RAG pattern | ✅ |
 | 15 | [Agent Marketplace](15-agent-marketplace.md) | Decentralized bidding | 📋 Spec |
 | 16 | [Resource Optimization](16-resource-optimization.md) | Cost/latency routing | ✅ |
-| 17 | [Reasoning Weaver](17-reasoning-weaver.md) | Tree of Thoughts | 📋 Spec |
+| 17a | [Thought Candidates](17a-thought-candidates.md) | Best-of-N sampling | ✅ |
+| 17b | [Tree of Thoughts](17b-tree-of-thoughts.md) | Multi-level exploration | ✅ |
 | 18 | [Guardrails](18-guardrails.md) | Safety and filtering | ✅ |
 | 19 | [Evaluation & Monitoring](19-evaluation-monitoring.md) | Observability | ✅ |
 | 20 | [Prioritization](20-prioritization.md) | Task scheduling | ✅ |
@@ -65,7 +66,8 @@ Ch 1: Prompt Chaining (foundation)
   +-> Ch 4: Reflection
   |   |
   |   +-> Ch 12: Exception Recovery (depends on Ch 4 logic)
-  |   +-> Ch 17: Reasoning Weaver (advanced reflection)
+  |   +-> Ch 17a: Thought Candidates (best-of-N)
+  |       +-> Ch 17b: Tree of Thoughts (extends 17a)
   |
   +-> Ch 5: Tool Use (depends on Ch 1-2)
       |
