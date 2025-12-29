@@ -9,12 +9,19 @@
 # Environment:
 #   OLLAMA_URL    - Ollama server URL (default: http://localhost:11434)
 #   LOGFIRE_TOKEN - Enable Logfire tracing
-#   REQUIRED_MODEL - Model to use (default: gpt-oss:20b)
+#   REQUIRED_MODEL - Default model (default: gpt-oss:20b)
+#   FAST_MODEL    - Fast model for generation (default: REQUIRED_MODEL)
+#   STRONG_MODEL  - Strong model for evaluation (default: REQUIRED_MODEL)
 #   RETRY_COUNT   - Number of retries (default: 2)
 #   TIMEOUT_SECS  - Timeout per pattern (default: 120)
+#
+# For thought_candidates/tree_of_thoughts, recommended:
+#   FAST_MODEL=qwen3:4b STRONG_MODEL=gpt-oss:20b
 
 OLLAMA_URL="${OLLAMA_URL:-http://localhost:11434}"
 REQUIRED_MODEL="${REQUIRED_MODEL:-gpt-oss:20b}"
+FAST_MODEL="${FAST_MODEL:-$REQUIRED_MODEL}"
+STRONG_MODEL="${STRONG_MODEL:-$REQUIRED_MODEL}"
 RETRY_COUNT="${RETRY_COUNT:-2}"
 TIMEOUT_SECS="${TIMEOUT_SECS:-120}"
 
@@ -41,7 +48,8 @@ while [[ $# -gt 0 ]]; do
             echo "  tool_use, planning, multi_agent, memory, learning,"
             echo "  human_in_loop, knowledge_retrieval, resource_aware,"
             echo "  guardrails, evaluation, prioritization, exception_recovery,"
-            echo "  mcp_integration, goal_monitoring"
+            echo "  mcp_integration, goal_monitoring, thought_candidates,"
+            echo "  tree_of_thoughts"
             exit 0
             ;;
         *)
@@ -70,6 +78,8 @@ ALL_PATTERNS=(
     exception_recovery
     mcp_integration
     goal_monitoring
+    thought_candidates
+    tree_of_thoughts
 )
 
 # If single pattern specified, validate and use it
@@ -152,6 +162,19 @@ logfire.configure(send_to_logfire='if-token-present')
 " 2>&1 | grep -o 'https://[^ ]*' | head -1)
     echo ""
     echo "Logfire dashboard: ${LOGFIRE_URL:-https://logfire.pydantic.dev/}"
+fi
+
+# Check if distinct models are configured for thought patterns
+printf "Distinct model tiers... "
+if [ "$FAST_MODEL" == "$STRONG_MODEL" ]; then
+    echo "WARN"
+    echo ""
+    echo "WARNING: FAST_MODEL == STRONG_MODEL ($FAST_MODEL)"
+    echo "For thought_candidates/tree_of_thoughts, recommend:"
+    echo "  FAST_MODEL=qwen3:4b STRONG_MODEL=gpt-oss:20b"
+    echo ""
+else
+    echo "OK (fast=$FAST_MODEL, strong=$STRONG_MODEL)"
 fi
 
 echo ""

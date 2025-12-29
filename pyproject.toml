@@ -12,6 +12,7 @@ dependencies = [
     "haiku-rag-slim>=0.22.0",
     "pydantic-ai>=0.1.0",
     "logfire>=3.0",
+    "rich>=13.0",
 ]
 
 [project.optional-dependencies]

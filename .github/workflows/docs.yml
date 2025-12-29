@@ -2,13 +2,20 @@ name: Documentation
 
 on:
   push:
-    branches: [main, master]
+    branches: ['**']
     paths:
       - 'docs/**'
       - 'mkdocs.yml'
       - 'src/**'
       - 'pyproject.toml'
       - '.github/workflows/docs.yml'
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - 'src/**'
+      - 'pyproject.toml'
   workflow_dispatch:
 
 permissions:
@@ -46,6 +53,7 @@ jobs:
           path: ./site
 
   deploy:
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
