@@ -41,9 +41,7 @@ class ThoughtNode(BaseModel):
     id: str = Field(description="Unique node identifier (e.g., '0.1.2')")
     depth: int = Field(ge=0, description="Depth in tree (0 = root)")
     scored_thought: ScoredThought
-    parent_id: str | None = Field(
-        default=None, description="Parent node ID"
-    )
+    parent_id: str | None = Field(default=None, description="Parent node ID")
     children_ids: list[str] = Field(
         default_factory=list, description="Child node IDs"
     )
@@ -133,7 +131,7 @@ def inject_synthesis_context(ctx: RunContext[SynthesisContext]) -> str:
     """Inject problem, reasoning path, and output constraints."""
     cfg = ctx.deps.output_config
     steps = "\n".join(
-        f"Step {i+1}: {node.scored_thought.thought.content}"
+        f"Step {i + 1}: {node.scored_thought.thought.content}"
         for i, node in enumerate(ctx.deps.path)
     )
 
@@ -448,12 +446,14 @@ if __name__ == "__main__":
         console.print()
 
         # Problem panel
-        console.print(Panel(
-            f"[bold]{result.problem.description}[/bold]\n\n"
-            f"[dim]Constraints: {', '.join(result.problem.constraints)}[/dim]",
-            title="Problem",
-            border_style="blue",
-        ))
+        console.print(
+            Panel(
+                f"[bold]{result.problem.description}[/bold]\n\n"
+                f"[dim]Constraints: {', '.join(result.problem.constraints)}[/dim]",
+                title="Problem",
+                border_style="blue",
+            )
+        )
 
         # Config summary
         cfg = result.config
@@ -504,9 +504,7 @@ if __name__ == "__main__":
             if len(content) > 60:
                 content = content[:57] + "..."
 
-            label = (
-                f"[{style}]{icon} [{score:.1f}] {content}[/]"
-            )
+            label = f"[{style}]{icon} [{score:.1f}] {content}[/]"
             branch = parent_tree.add(label)
 
             # Add children
@@ -541,13 +539,15 @@ if __name__ == "__main__":
 
         # Solution panel
         console.print()
-        console.print(Panel(
-            f"[bold]{result.solution.solution}[/]\n\n"
-            f"[bold]Confidence:[/] {result.solution.confidence:.0%}\n\n"
-            f"[bold]Reasoning:[/]\n{result.solution.reasoning}",
-            title="[bold green]Final Solution[/]",
-            border_style="green",
-        ))
+        console.print(
+            Panel(
+                f"[bold]{result.solution.solution}[/]\n\n"
+                f"[bold]Confidence:[/] {result.solution.confidence:.0%}\n\n"
+                f"[bold]Reasoning:[/]\n{result.solution.reasoning}",
+                title="[bold green]Final Solution[/]",
+                border_style="green",
+            )
+        )
 
         # Statistics
         console.print()

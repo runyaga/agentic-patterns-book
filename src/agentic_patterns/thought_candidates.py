@@ -324,12 +324,14 @@ if __name__ == "__main__":
         console.print()
 
         # Problem panel
-        console.print(Panel(
-            f"[bold]{result.problem.description}[/bold]\n\n"
-            f"[dim]Constraints: {', '.join(result.problem.constraints)}[/dim]",
-            title="Problem",
-            border_style="blue",
-        ))
+        console.print(
+            Panel(
+                f"[bold]{result.problem.description}[/bold]\n\n"
+                f"[dim]Constraints: {', '.join(result.problem.constraints)}[/dim]",
+                title="Problem",
+                border_style="blue",
+            )
+        )
 
         # Candidates table
         table = Table(
@@ -345,16 +347,23 @@ if __name__ == "__main__":
 
         for i, candidate in enumerate(result.candidates):
             is_best = candidate == result.best
-            score_style = "bold green" if is_best else (
-                "green" if candidate.score >= 7 else
-                "yellow" if candidate.score >= 5 else "red"
+            score_style = (
+                "bold green"
+                if is_best
+                else (
+                    "green"
+                    if candidate.score >= 7
+                    else "yellow"
+                    if candidate.score >= 5
+                    else "red"
+                )
             )
             valid_icon = "✓" if candidate.evaluation.is_valid else "✗"
             valid_style = "green" if candidate.evaluation.is_valid else "red"
             row_style = "on grey23" if is_best else ""
 
             table.add_row(
-                f"{'★' if is_best else str(i+1)}",
+                f"{'★' if is_best else str(i + 1)}",
                 f"[{score_style}]{candidate.score:.1f}[/]",
                 f"[{valid_style}]{valid_icon}[/]",
                 candidate.thought.content[:47] + "..."
@@ -370,14 +379,16 @@ if __name__ == "__main__":
 
         # Best candidate detail
         console.print()
-        console.print(Panel(
-            f"[bold green]Score: {result.best.score:.1f}/10[/]\n\n"
-            f"[bold]Approach:[/]\n{result.best.thought.content}\n\n"
-            f"[bold]Reasoning:[/]\n{result.best.thought.reasoning}\n\n"
-            f"[bold]Evaluation:[/]\n{result.best.evaluation.feedback}",
-            title="[bold green]★ Best Candidate[/]",
-            border_style="green",
-        ))
+        console.print(
+            Panel(
+                f"[bold green]Score: {result.best.score:.1f}/10[/]\n\n"
+                f"[bold]Approach:[/]\n{result.best.thought.content}\n\n"
+                f"[bold]Reasoning:[/]\n{result.best.thought.reasoning}\n\n"
+                f"[bold]Evaluation:[/]\n{result.best.evaluation.feedback}",
+                title="[bold green]★ Best Candidate[/]",
+                border_style="green",
+            )
+        )
 
     async def main() -> None:
         console = Console()

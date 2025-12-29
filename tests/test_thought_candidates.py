@@ -447,9 +447,7 @@ class TestEdgeCases:
         """Test with just one candidate."""
         problem = ProblemStatement(description="Test")
         thought = Thought(content="Only option", reasoning="No choice")
-        evaluation = ThoughtEvaluation(
-            score=5.0, is_valid=True, feedback="OK"
-        )
+        evaluation = ThoughtEvaluation(score=5.0, is_valid=True, feedback="OK")
         scored = ScoredThought(thought=thought, evaluation=evaluation)
 
         result = BestOfNResult(
