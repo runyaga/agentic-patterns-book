@@ -2,6 +2,23 @@
 
 Self-correction via automated validation loops.
 
+## Flow Diagram
+
+```mermaid
+flowchart TB
+    I[Input] --> G[Generator]
+    G --> V{Validator}
+    V -->|Pass| O[Output]
+    V -->|Fail| R[Retry with Feedback]
+    R --> G
+
+    subgraph Reflection Loop
+        G
+        V
+        R
+    end
+```
+
 ## Implementation
 
 Source: [`src/agentic_patterns/reflection.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/reflection.py)

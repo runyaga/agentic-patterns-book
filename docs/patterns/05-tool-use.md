@@ -2,6 +2,21 @@
 
 Enable agents to execute external functions (APIs, DBs, calculations).
 
+## Flow Diagram
+
+```mermaid
+flowchart LR
+    Q[Query] --> A[Agent]
+    A --> D{Decide}
+    D -->|Need Data| T1[Tool: API Call]
+    D -->|Need Calc| T2[Tool: Calculate]
+    D -->|Need Action| T3[Tool: Execute]
+    T1 --> A
+    T2 --> A
+    T3 --> A
+    D -->|Ready| R[Response]
+```
+
 ## Implementation
 
 Source: [`src/agentic_patterns/tool_use.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/tool_use.py)

@@ -2,6 +2,22 @@
 
 Chain multiple LLM calls where each step's output becomes the next input.
 
+## Flow Diagram
+
+```mermaid
+flowchart LR
+    I[Input] --> S1[Step 1: Extract]
+    S1 --> S2[Step 2: Analyze]
+    S2 --> S3[Step 3: Generate]
+    S3 --> O[Output]
+
+    subgraph Chain
+        S1
+        S2
+        S3
+    end
+```
+
 ## Implementation
 
 Source: [`src/agentic_patterns/prompt_chaining.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/prompt_chaining.py)
