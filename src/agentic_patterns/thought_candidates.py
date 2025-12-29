@@ -324,10 +324,11 @@ if __name__ == "__main__":
         console.print()
 
         # Problem panel
+        constraints = ", ".join(result.problem.constraints)
         console.print(
             Panel(
                 f"[bold]{result.problem.description}[/bold]\n\n"
-                f"[dim]Constraints: {', '.join(result.problem.constraints)}[/dim]",
+                f"[dim]Constraints: {constraints}[/dim]",
                 title="Problem",
                 border_style="blue",
             )
