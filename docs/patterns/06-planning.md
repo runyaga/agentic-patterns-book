@@ -2,6 +2,28 @@
 
 Dynamically decompose goals into steps, execute them, and adapt to failures.
 
+## Flow Diagram
+
+```mermaid
+flowchart TB
+    G[Goal] --> P[Planner]
+    P --> Plan[Plan: Steps 1-N]
+    Plan --> E[Executor]
+    E --> S1[Step 1]
+    S1 -->|Success| S2[Step 2]
+    S1 -->|Fail| RP[Replan]
+    S2 --> SN[Step N]
+    SN --> R[Result]
+    RP --> P
+
+    subgraph Execution Loop
+        E
+        S1
+        S2
+        SN
+    end
+```
+
 ## Implementation
 
 Source: [`src/agentic_patterns/planning.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/planning.py)

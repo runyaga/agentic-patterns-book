@@ -2,6 +2,26 @@
 
 Execute independent sub-tasks concurrently (`asyncio.gather`) to reduce latency.
 
+## Flow Diagram
+
+```mermaid
+flowchart TB
+    I[Input] --> F[Fan-out]
+    F --> T1[Task 1]
+    F --> T2[Task 2]
+    F --> T3[Task N]
+    T1 --> A[Aggregate]
+    T2 --> A
+    T3 --> A
+    A --> O[Output]
+
+    subgraph Parallel Execution
+        T1
+        T2
+        T3
+    end
+```
+
 ## Implementation
 
 Source: [`src/agentic_patterns/parallelization.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/parallelization.py)

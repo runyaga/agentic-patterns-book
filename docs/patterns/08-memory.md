@@ -2,6 +2,25 @@
 
 Maintain conversation context across interactions using different storage strategies.
 
+## Flow Diagram
+
+```mermaid
+flowchart LR
+    U[User Message] --> A[Agent]
+    A <--> M[Memory Store]
+    A --> R[Response]
+
+    subgraph Memory Strategies
+        B[Buffer: Full History]
+        W[Window: Last N]
+        S[Summary: Compressed]
+    end
+
+    M --- B
+    M --- W
+    M --- S
+```
+
 ## Implementation
 
 Source: [`src/agentic_patterns/memory.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/memory.py)

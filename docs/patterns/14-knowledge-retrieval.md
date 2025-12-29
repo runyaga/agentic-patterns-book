@@ -2,6 +2,19 @@
 
 Augment LLMs with external knowledge via embeddings and vector search.
 
+## Flow Diagram
+
+```mermaid
+flowchart LR
+    Q[Query] --> E1[Embed Query]
+    E1 --> VS[Vector Search]
+    VS --> D[(Document Store)]
+    D --> C[Top-K Chunks]
+    C --> A[LLM + Context]
+    Q --> A
+    A --> R[Response + Citations]
+```
+
 ## Implementation
 
 Source: [`src/agentic_patterns/knowledge_retrieval.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/knowledge_retrieval.py)

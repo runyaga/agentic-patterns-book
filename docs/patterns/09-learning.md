@@ -2,6 +2,21 @@
 
 Improve performance over time by storing experiences (Few-Shot) and adapting prompts.
 
+## Flow Diagram
+
+```mermaid
+flowchart TB
+    Q[Query] --> S[Select Examples]
+    S --> E[Experience Store]
+    E --> Ex[Relevant Examples]
+    Ex --> A[Agent + Few-Shot]
+    A --> R[Response]
+    R --> F{Feedback?}
+    F -->|Good| Store[Store as Example]
+    Store --> E
+    F -->|None| Done[Done]
+```
+
 ## Implementation
 
 Source: [`src/agentic_patterns/learning.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/learning.py)

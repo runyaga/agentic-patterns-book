@@ -2,6 +2,21 @@
 
 Integrate human oversight for high-stakes decisions or low-confidence outputs.
 
+## Flow Diagram
+
+```mermaid
+flowchart TB
+    I[Input] --> A[Agent]
+    A --> C{Confidence Check}
+    C -->|High| Auto[Auto-approve]
+    C -->|Low| Q[Review Queue]
+    Q --> H[Human Reviewer]
+    H -->|Approve| Auto
+    H -->|Reject| R[Revise]
+    R --> A
+    Auto --> O[Output]
+```
+
 ## Implementation
 
 Source: [`src/agentic_patterns/human_in_loop.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/human_in_loop.py)
