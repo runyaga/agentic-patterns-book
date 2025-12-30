@@ -322,6 +322,7 @@ class TestRunEpisode:
     @pytest.mark.asyncio
     async def test_run_episode_tracks_metrics(self):
         """Test that episode tracks planning metrics."""
+
         async def mock_get_obs():
             return "observation"
 
@@ -435,6 +436,7 @@ class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_run_episode_max_steps_zero(self):
         """Test episode with max_steps=0."""
+
         async def mock_get_obs():
             return "obs"
 
@@ -526,6 +528,7 @@ class TestIntegration:
     @pytest.mark.asyncio
     async def test_episode_modes_comparison(self):
         """Compare behavior across DYNAMIC, ALWAYS, and NEVER modes."""
+
         async def get_obs():
             return "state"
 
@@ -534,8 +537,11 @@ class TestIntegration:
 
         results = {}
 
-        for mode in [PlanningMode.DYNAMIC, PlanningMode.ALWAYS,
-                     PlanningMode.NEVER]:
+        for mode in [
+            PlanningMode.DYNAMIC,
+            PlanningMode.ALWAYS,
+            PlanningMode.NEVER,
+        ]:
             counter = {"count": 0}
 
             async def mock_run(prompt, m=mode, ctr=counter):
@@ -622,6 +628,7 @@ class TestIntegration:
     @pytest.mark.asyncio
     async def test_plan_aging(self):
         """Test that plan age is tracked and included in context."""
+
         async def get_obs():
             return "state"
 
@@ -660,6 +667,7 @@ class TestIntegration:
     @pytest.mark.asyncio
     async def test_available_actions_in_context(self):
         """Test that available actions are passed to agent."""
+
         async def get_obs():
             return "state"
 
@@ -703,6 +711,7 @@ class TestIntegration:
         Verify that planning frequency is correctly calculated and
         represents the ratio of planning decisions to total steps.
         """
+
         async def get_obs():
             return "state"
 

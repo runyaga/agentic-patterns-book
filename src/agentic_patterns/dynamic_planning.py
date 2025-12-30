@@ -664,7 +664,9 @@ if __name__ == "__main__":
         # Required files per phase
         PHASE_REQUIREMENTS: dict[ProjectPhase, list[str]] = {
             ProjectPhase.INIT: [
-                "pyproject.toml", "src/__init__.py", "README.md"
+                "pyproject.toml",
+                "src/__init__.py",
+                "README.md",
             ],
             ProjectPhase.TESTS: ["tests/conftest.py", "tests/test_main.py"],
             ProjectPhase.CI: [".github/workflows/ci.yml"],
@@ -699,8 +701,7 @@ if __name__ == "__main__":
             """Return (completed, total) files for a phase."""
             required = self.PHASE_REQUIREMENTS.get(phase, [])
             done = sum(
-                1 for f in required
-                if self.files.get(f, ProjectFile(f)).exists
+                1 for f in required if self.files.get(f, ProjectFile(f)).exists
             )
             return done, len(required)
 
@@ -795,6 +796,7 @@ if __name__ == "__main__":
                         return self._create_file(fname)
                 # Try to extract any quoted filename
                 import re
+
                 match = re.search(r'["\']([^"\']+)["\']', action)
                 if match:
                     return self._create_file(match.group(1))
