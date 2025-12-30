@@ -308,7 +308,7 @@ class TestBestOfN:
         """Test that N candidates are generated."""
         thoughts_iter = iter(mock_scored_thoughts)
 
-        async def mock_gen_eval(problem, config=None):
+        async def mock_gen_eval(problem, config=None, **kwargs):
             return next(thoughts_iter)
 
         with patch(
@@ -327,7 +327,7 @@ class TestBestOfN:
         """Test that the best candidate is the highest-scoring one."""
         thoughts_iter = iter(mock_scored_thoughts)
 
-        async def mock_gen_eval(problem, config=None):
+        async def mock_gen_eval(problem, config=None, **kwargs):
             return next(thoughts_iter)
 
         with patch(
@@ -347,7 +347,7 @@ class TestBestOfN:
         """Test that candidates are sorted by score descending."""
         thoughts_iter = iter(mock_scored_thoughts)
 
-        async def mock_gen_eval(problem, config=None):
+        async def mock_gen_eval(problem, config=None, **kwargs):
             return next(thoughts_iter)
 
         with patch(
@@ -370,7 +370,7 @@ class TestBestOfN:
             ),
         )
 
-        async def mock_gen_eval(problem, config=None):
+        async def mock_gen_eval(problem, config=None, **kwargs):
             return mock_scored
 
         with patch(
@@ -395,7 +395,7 @@ class TestBestOfN:
             ),
         )
 
-        async def mock_gen_eval(problem, config=None):
+        async def mock_gen_eval(problem, config=None, **kwargs):
             call_times.append(time.time())
             return mock_scored
 
@@ -470,7 +470,7 @@ class TestEdgeCases:
             ),
         )
 
-        async def mock_gen_eval(p, config=None):
+        async def mock_gen_eval(p, config=None, **kwargs):
             return mock_scored
 
         with patch(

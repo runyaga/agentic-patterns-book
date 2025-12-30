@@ -204,7 +204,7 @@ class TestExpandNode:
             ),
         )
 
-        async def mock_gen_eval(problem, config=None):
+        async def mock_gen_eval(problem, config=None, **kwargs):
             return mock_scored
 
         with patch(
@@ -230,7 +230,7 @@ class TestExpandNode:
             ),
         )
 
-        async def mock_gen_eval(problem, config=None):
+        async def mock_gen_eval(problem, config=None, **kwargs):
             return mock_scored
 
         with patch(
@@ -258,7 +258,7 @@ class TestExpandNode:
             ),
         )
 
-        async def mock_gen_eval(problem, config=None):
+        async def mock_gen_eval(problem, config=None, **kwargs):
             return mock_scored
 
         with patch(
@@ -279,7 +279,7 @@ class TestExpandNode:
         scores = [6.0, 4.0, 3.0]  # Only first is above threshold (5.0)
         score_iter = iter(scores)
 
-        async def mock_gen_eval(problem, config=None):
+        async def mock_gen_eval(problem, config=None, **kwargs):
             score = next(score_iter)
             return ScoredThought(
                 thought=Thought(content="Child", reasoning="R"),
@@ -435,7 +435,7 @@ class TestBeamSearch:
             ),
         )
 
-        async def mock_gen_eval(problem, config=None):
+        async def mock_gen_eval(problem, config=None, **kwargs):
             return mock_scored
 
         with patch(
@@ -457,7 +457,7 @@ class TestBeamSearch:
         """Test that only top-k nodes are expanded."""
         call_count = 0
 
-        async def mock_gen_eval(problem, config=None):
+        async def mock_gen_eval(problem, config=None, **kwargs):
             nonlocal call_count
             call_count += 1
             return ScoredThought(
@@ -487,7 +487,7 @@ class TestBeamSearch:
         """Test that beam search returns a valid best path."""
         score_base = 6.0
 
-        async def mock_gen_eval(problem, config=None):
+        async def mock_gen_eval(problem, config=None, **kwargs):
             # Use modulo to stay in valid range
             return ScoredThought(
                 thought=Thought(content="Node", reasoning="R"),
@@ -620,7 +620,7 @@ class TestRunTreeOfThoughts:
             solution="Answer", confidence=0.8, reasoning="Derived"
         )
 
-        async def mock_gen_eval(problem, config=None):
+        async def mock_gen_eval(problem, config=None, **kwargs):
             return mock_scored
 
         async def mock_synth_run(prompt, deps):
@@ -660,7 +660,7 @@ class TestRunTreeOfThoughts:
             solution="Y", confidence=0.7, reasoning="Z"
         )
 
-        async def mock_gen_eval(problem, config=None):
+        async def mock_gen_eval(problem, config=None, **kwargs):
             return mock_scored
 
         async def mock_synth_run(prompt, deps):
@@ -698,7 +698,7 @@ class TestRunTreeOfThoughts:
         scores = [7.0, 4.0, 6.0] + [7.0] * 6
         score_iter = iter(scores)
 
-        async def mock_gen_eval(problem, config=None):
+        async def mock_gen_eval(problem, config=None, **kwargs):
             score = next(score_iter, 7.0)
             return ScoredThought(
                 thought=Thought(content="X", reasoning="R"),
@@ -748,7 +748,7 @@ class TestRunTreeOfThoughts:
             solution="Y", confidence=0.7, reasoning="Z"
         )
 
-        async def mock_gen_eval(problem, config=None):
+        async def mock_gen_eval(problem, config=None, **kwargs):
             return mock_scored
 
         async def mock_synth_run(prompt, deps):

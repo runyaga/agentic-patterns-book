@@ -34,6 +34,7 @@ from pydantic import BaseModel
 from pydantic import Field
 from pydantic_ai import Agent
 from pydantic_ai import RunContext
+from pydantic_ai.models import Model
 
 from agentic_patterns._models import get_model
 
@@ -379,10 +380,6 @@ class VectorStore:
 
 
 # --8<-- [start:rag]
-# Initialize model
-model = get_model()
-
-
 @dataclass
 class RAGDeps:
     """Dependencies for RAG agent with dynamic search."""
@@ -392,23 +389,16 @@ class RAGDeps:
     min_score: float = 0.1
 
 
-# RAG generation agent with tool-based retrieval
-rag_agent: Agent[RAGDeps, str] = Agent(
-    model,
-    system_prompt=(
-        "You are a helpful assistant that answers questions using a "
-        "knowledge base. Use the search_knowledge tool to find relevant "
-        "information before answering. If the search doesn't return "
-        "useful results, say so clearly. Always cite which parts of "
-        "the retrieved context support your answer."
-    ),
-    deps_type=RAGDeps,
-    output_type=str,
+RAG_SYSTEM_PROMPT = (
+    "You are a helpful assistant that answers questions using a "
+    "knowledge base. Use the search_knowledge tool to find relevant "
+    "information before answering. If the search doesn't return "
+    "useful results, say so clearly. Always cite which parts of "
+    "the retrieved context support your answer."
 )
 
 
-@rag_agent.tool
-async def search_knowledge(
+async def _search_knowledge_tool(
     ctx: RunContext[RAGDeps],
     query: str,
 ) -> str:
@@ -442,6 +432,44 @@ async def search_knowledge(
     return "\n\n".join(context_parts)
 
 
+def create_rag_agent(
+    model: Model | None = None,
+) -> Agent[RAGDeps, str]:
+    """
+    Create a RAG agent with optional model override.
+
+    Args:
+        model: pydantic-ai Model instance. If None, uses default model.
+
+    Returns:
+        Configured RAG agent with search_knowledge tool.
+    """
+    agent: Agent[RAGDeps, str] = Agent(
+        model or get_model(),
+        system_prompt=RAG_SYSTEM_PROMPT,
+        deps_type=RAGDeps,
+        output_type=str,
+    )
+    agent.tool(_search_knowledge_tool)
+    return agent
+
+
+# Default agent (created lazily for backward compatibility)
+_default_rag_agent: Agent[RAGDeps, str] | None = None
+
+
+def _get_default_rag_agent() -> Agent[RAGDeps, str]:
+    """Get or create the default RAG agent."""
+    global _default_rag_agent
+    if _default_rag_agent is None:
+        _default_rag_agent = create_rag_agent()
+    return _default_rag_agent
+
+
+# Module-level alias for backward compatibility with tests
+rag_agent = create_rag_agent()
+
+
 @dataclass
 class RAGPipeline:
     """
@@ -453,6 +481,7 @@ class RAGPipeline:
     store: VectorStore
     top_k: int = 3
     min_score: float = 0.1
+    agent: Agent[RAGDeps, str] | None = None
 
     async def query(
         self,
@@ -477,8 +506,11 @@ class RAGPipeline:
             min_score=self.min_score,
         )
 
+        # Use injected agent or module-level default
+        the_agent = self.agent or globals()["rag_agent"]
+
         # Run agent - it will use search_knowledge tool as needed
-        result = await rag_agent.run(question, deps=deps)
+        result = await the_agent.run(question, deps=deps)
         answer = result.output
 
         # Get chunks that were retrieved during the query

@@ -26,11 +26,16 @@ from pydantic import Field
 from pydantic import computed_field
 from pydantic_ai import Agent
 from pydantic_ai import RunContext
+from pydantic_ai.models import Model
 
 from agentic_patterns._models import get_strong_model
+from agentic_patterns.thought_candidates import EvaluationContext
+from agentic_patterns.thought_candidates import GenerationContext
 from agentic_patterns.thought_candidates import OutputConfig
 from agentic_patterns.thought_candidates import ProblemStatement
 from agentic_patterns.thought_candidates import ScoredThought
+from agentic_patterns.thought_candidates import Thought
+from agentic_patterns.thought_candidates import ThoughtEvaluation
 from agentic_patterns.thought_candidates import generate_and_evaluate
 
 
@@ -112,22 +117,13 @@ class SynthesisContext:
 
 
 # --8<-- [start:agents]
-# Use strong model for synthesis (quality reasoning)
-strong_model = get_strong_model()
-
-synthesis_agent: Agent[SynthesisContext, SynthesizedSolution] = Agent(
-    strong_model,  # Strong model for final synthesis
-    system_prompt=(
-        "You are a solution synthesizer. Given a sequence of reasoning "
-        "steps, combine them into a final answer."
-    ),
-    deps_type=SynthesisContext,
-    output_type=SynthesizedSolution,
+SYNTHESIZER_SYSTEM_PROMPT = (
+    "You are a solution synthesizer. Given a sequence of reasoning "
+    "steps, combine them into a final answer."
 )
 
 
-@synthesis_agent.system_prompt
-def inject_synthesis_context(ctx: RunContext[SynthesisContext]) -> str:
+def _synthesizer_prompt(ctx: RunContext[SynthesisContext]) -> str:
     """Inject problem, reasoning path, and output constraints."""
     cfg = ctx.deps.output_config
     steps = "\n".join(
@@ -149,6 +145,44 @@ def inject_synthesis_context(ctx: RunContext[SynthesisContext]) -> str:
     )
 
 
+def create_synthesizer_agent(
+    model: Model | None = None,
+) -> Agent[SynthesisContext, SynthesizedSolution]:
+    """
+    Create a synthesizer agent with optional model override.
+
+    Args:
+        model: pydantic-ai Model instance. If None, uses default strong model.
+
+    Returns:
+        Configured synthesizer agent.
+    """
+    agent: Agent[SynthesisContext, SynthesizedSolution] = Agent(
+        model or get_strong_model(),
+        system_prompt=SYNTHESIZER_SYSTEM_PROMPT,
+        deps_type=SynthesisContext,
+        output_type=SynthesizedSolution,
+    )
+    agent.system_prompt(_synthesizer_prompt)
+    return agent
+
+
+# Default synthesizer (created lazily for backward compatibility)
+_SynthesizerAgent = Agent[SynthesisContext, SynthesizedSolution]
+_default_synthesizer: _SynthesizerAgent | None = None
+
+# Module-level alias for backward compatibility with tests
+synthesis_agent = create_synthesizer_agent()
+
+
+def _get_default_synthesizer() -> Agent[SynthesisContext, SynthesizedSolution]:
+    """Get or create the default synthesizer agent."""
+    global _default_synthesizer
+    if _default_synthesizer is None:
+        _default_synthesizer = create_synthesizer_agent()
+    return _default_synthesizer
+
+
 # --8<-- [end:agents]
 
 
@@ -158,6 +192,9 @@ async def expand_node(
     node: ThoughtNode,
     tree_config: TreeConfig,
     output_config: OutputConfig | None = None,
+    *,
+    generator: Agent[GenerationContext, Thought] | None = None,
+    evaluator: Agent[EvaluationContext, ThoughtEvaluation] | None = None,
 ) -> list[ThoughtNode]:
     """
     Expand a node by generating child thoughts.
@@ -170,6 +207,8 @@ async def expand_node(
         node: The parent node to expand.
         tree_config: Tree exploration configuration.
         output_config: Output constraints (word limits, ASCII-only, etc.).
+        generator: Optional generator agent. If None, uses default.
+        evaluator: Optional evaluator agent. If None, uses default.
 
     Returns:
         List of child ThoughtNodes (may include pruned nodes).
@@ -185,7 +224,12 @@ async def expand_node(
 
         # Generate children in parallel using 17a's function
         tasks = [
-            generate_and_evaluate(child_problem, output_config)
+            generate_and_evaluate(
+                child_problem,
+                output_config,
+                generator=generator,
+                evaluator=evaluator,
+            )
             for _ in range(tree_config.branch_factor)
         ]
         scored_thoughts = await asyncio.gather(*tasks)
@@ -254,6 +298,9 @@ async def beam_search(
     problem: ProblemStatement,
     tree_config: TreeConfig,
     output_config: OutputConfig | None = None,
+    *,
+    generator: Agent[GenerationContext, Thought] | None = None,
+    evaluator: Agent[EvaluationContext, ThoughtEvaluation] | None = None,
 ) -> tuple[list[ThoughtNode], list[ThoughtNode]]:
     """
     Perform beam search over the thought tree.
@@ -265,6 +312,8 @@ async def beam_search(
         problem: The structured problem statement.
         tree_config: Tree exploration configuration.
         output_config: Output constraints (word limits, ASCII-only, etc.).
+        generator: Optional generator agent. If None, uses default.
+        evaluator: Optional evaluator agent. If None, uses default.
 
     Returns:
         Tuple of (all_nodes, best_path_nodes).
@@ -278,7 +327,12 @@ async def beam_search(
                 f"Generating {tree_config.branch_factor} root candidates"
             )
             root_tasks = [
-                generate_and_evaluate(problem, output_config)
+                generate_and_evaluate(
+                    problem,
+                    output_config,
+                    generator=generator,
+                    evaluator=evaluator,
+                )
                 for _ in range(tree_config.branch_factor)
             ]
             root_scored = await asyncio.gather(*root_tasks)
@@ -321,7 +375,14 @@ async def beam_search(
 
                 # Expand each beam node in parallel
                 expansion_tasks = [
-                    expand_node(problem, n, tree_config, output_config)
+                    expand_node(
+                        problem,
+                        n,
+                        tree_config,
+                        output_config,
+                        generator=generator,
+                        evaluator=evaluator,
+                    )
                     for n in beam
                 ]
                 children_lists = await asyncio.gather(*expansion_tasks)
@@ -346,6 +407,8 @@ async def synthesize_solution(
     problem: ProblemStatement,
     path: list[ThoughtNode],
     output_config: OutputConfig | None = None,
+    *,
+    synthesizer: Agent[SynthesisContext, SynthesizedSolution] | None = None,
 ) -> SynthesizedSolution:
     """
     Synthesize final solution from the best path.
@@ -354,15 +417,17 @@ async def synthesize_solution(
         problem: The structured problem statement.
         path: The best path through the tree.
         output_config: Output constraints (word limits, ASCII-only, etc.).
+        synthesizer: Optional synthesizer agent. If None, uses default.
 
     Returns:
         SynthesizedSolution combining the reasoning steps.
     """
     with logfire.span("synthesize_solution", path_length=len(path)):
+        agent = synthesizer or synthesis_agent
         ctx = SynthesisContext(
             problem=problem, path=path, config=output_config
         )
-        result = await synthesis_agent.run("Synthesize the solution", deps=ctx)
+        result = await agent.run("Synthesize the solution", deps=ctx)
         logfire.info(
             "Solution synthesized",
             confidence=result.output.confidence,
@@ -374,6 +439,10 @@ async def run_tree_of_thoughts(
     problem: ProblemStatement,
     tree_config: TreeConfig | None = None,
     output_config: OutputConfig | None = None,
+    *,
+    generator: Agent[GenerationContext, Thought] | None = None,
+    evaluator: Agent[EvaluationContext, ThoughtEvaluation] | None = None,
+    synthesizer: Agent[SynthesisContext, SynthesizedSolution] | None = None,
 ) -> TreeExplorationResult:
     """
     Run full Tree of Thoughts exploration.
@@ -386,6 +455,9 @@ async def run_tree_of_thoughts(
         problem: The structured problem statement.
         tree_config: Tree exploration configuration (uses defaults if None).
         output_config: Output constraints (word limits, ASCII-only, etc.).
+        generator: Optional generator agent. If None, uses default.
+        evaluator: Optional evaluator agent. If None, uses default.
+        synthesizer: Optional synthesizer agent. If None, uses default.
 
     Returns:
         TreeExplorationResult with the full tree and solution.
@@ -403,7 +475,11 @@ async def run_tree_of_thoughts(
 
         # Run beam search
         all_nodes, best_path = await beam_search(
-            problem, tree_config, output_config
+            problem,
+            tree_config,
+            output_config,
+            generator=generator,
+            evaluator=evaluator,
         )
 
         # Count pruned nodes
@@ -417,7 +493,9 @@ async def run_tree_of_thoughts(
         )
 
         # Synthesize solution from best path
-        solution = await synthesize_solution(problem, best_path, output_config)
+        solution = await synthesize_solution(
+            problem, best_path, output_config, synthesizer=synthesizer
+        )
 
         return TreeExplorationResult(
             problem=problem,

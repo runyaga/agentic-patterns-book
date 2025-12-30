@@ -22,6 +22,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.mcp import CallToolFunc
 from pydantic_ai.mcp import MCPServerStdio
 from pydantic_ai.mcp import ToolResult
+from pydantic_ai.models import Model
 
 from agentic_patterns._models import get_model
 
@@ -91,6 +92,7 @@ def create_mcp_agent(
     servers: list[MCPServerStdio] | None = None,
     system_prompt: str = "Use the available tools to help the user.",
     with_deps: bool = False,
+    model: Model | None = None,
 ) -> Agent[MCPDeps, str] | Agent[None, str]:
     """
     Create an agent with MCP server tools.
@@ -102,6 +104,7 @@ def create_mcp_agent(
         servers: MCP servers to connect. Defaults to calculator.
         system_prompt: Agent system prompt.
         with_deps: Whether to enable deps propagation.
+        model: pydantic-ai Model instance. If None, uses default model.
 
     Returns:
         Configured agent with MCP tools.
@@ -113,6 +116,8 @@ def create_mcp_agent(
     """
     if servers is None:
         servers = [create_calculator_server()]
+
+    agent_model = model or get_model()
 
     if with_deps:
         # Recreate servers with deps propagation
@@ -127,14 +132,14 @@ def create_mcp_agent(
             servers_with_deps.append(new_server)
 
         return Agent(
-            get_model(),
+            agent_model,
             system_prompt=system_prompt,
             deps_type=MCPDeps,
             toolsets=servers_with_deps,
         )
 
     return Agent(
-        get_model(),
+        agent_model,
         system_prompt=system_prompt,
         toolsets=servers,
     )
@@ -148,6 +153,7 @@ async def run_with_mcp_tools(
     prompt: str,
     servers: list[MCPServerStdio] | None = None,
     deps: MCPDeps | None = None,
+    model: Model | None = None,
 ) -> str:
     """
     Run a prompt with MCP tool access.
@@ -158,6 +164,7 @@ async def run_with_mcp_tools(
         prompt: The user prompt.
         servers: MCP servers to use. Defaults to calculator.
         deps: Optional dependencies to pass to tools.
+        model: pydantic-ai Model instance. If None, uses default model.
 
     Returns:
         Agent response as string.
@@ -167,7 +174,7 @@ async def run_with_mcp_tools(
         print(result)  # "The result of 15 * 7 is 105."
     """
     with_deps = deps is not None
-    agent = create_mcp_agent(servers=servers, with_deps=with_deps)
+    agent = create_mcp_agent(servers=servers, with_deps=with_deps, model=model)
 
     async with agent:
         if deps:
@@ -177,17 +184,20 @@ async def run_with_mcp_tools(
         return result.output
 
 
-async def run_multi_server_example() -> str:
+async def run_multi_server_example(model: Model | None = None) -> str:
     """
     Example: Agent with multiple MCP servers.
 
     Shows how to combine calculator and filesystem tools.
+
+    Args:
+        model: pydantic-ai Model instance. If None, uses default model.
     """
     calc = create_calculator_server(tool_prefix="calc")
     fs = create_filesystem_server(tool_prefix="fs")
 
     agent = Agent(
-        get_model(),
+        model or get_model(),
         system_prompt=(
             "You have calculator tools (calc_add, calc_multiply, etc) "
             "and filesystem tools (fs_list_directory, fs_read_file, etc). "

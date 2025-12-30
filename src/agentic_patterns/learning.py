@@ -32,6 +32,7 @@ from pydantic import BaseModel
 from pydantic import Field
 from pydantic_ai import Agent
 from pydantic_ai import RunContext
+from pydantic_ai.models import Model
 
 from agentic_patterns._models import get_model
 
@@ -337,10 +338,6 @@ class FeedbackLoop:
 
 
 # --8<-- [start:agents]
-# Initialize model
-model = get_model()
-
-
 @dataclass
 class LearningDeps:
     """Dependencies for learning-enabled agents."""
@@ -351,33 +348,27 @@ class LearningDeps:
     max_examples: int = 3
 
 
-# Prompt adapter agent - refines prompts based on learnings
-prompt_adapter_agent = Agent(
-    model,
-    system_prompt=(
-        "You are a prompt optimization specialist. Given an original "
-        "system prompt and feedback about failures, create an improved "
-        "prompt that addresses the issues. Keep the core intent but "
-        "add clarifications or constraints to prevent failures."
-    ),
-    output_type=AdaptedPrompt,
+PROMPT_ADAPTER_SYSTEM_PROMPT = (
+    "You are a prompt optimization specialist. Given an original "
+    "system prompt and feedback about failures, create an improved "
+    "prompt that addresses the issues. Keep the core intent but "
+    "add clarifications or constraints to prevent failures."
 )
 
-# Task agent - performs tasks with few-shot examples via @system_prompt
-task_agent: Agent[LearningDeps, str] = Agent(
-    model,
-    system_prompt=(
-        "You are a helpful assistant. Complete the given task. "
-        "Use any provided examples as guidance for the expected "
-        "format and style of your response."
-    ),
-    deps_type=LearningDeps,
-    output_type=str,
+TASK_AGENT_SYSTEM_PROMPT = (
+    "You are a helpful assistant. Complete the given task. "
+    "Use any provided examples as guidance for the expected "
+    "format and style of your response."
+)
+
+FEEDBACK_EVALUATOR_SYSTEM_PROMPT = (
+    "You are a feedback evaluator. Analyze the feedback provided "
+    "for an agent's output and determine if it's helpful for "
+    "improvement. Suggest specific improvements if possible."
 )
 
 
-@task_agent.system_prompt
-def inject_examples(ctx: RunContext[LearningDeps]) -> str:
+def _inject_examples(ctx: RunContext[LearningDeps]) -> str:
     """Inject few-shot examples from experience store into system prompt."""
     if not ctx.deps.use_examples or not ctx.deps.task_type:
         return ""
@@ -399,16 +390,75 @@ def inject_examples(ctx: RunContext[LearningDeps]) -> str:
     return "\n".join(lines)
 
 
-# Feedback evaluator - assesses feedback quality
-feedback_evaluator = Agent(
-    model,
-    system_prompt=(
-        "You are a feedback evaluator. Analyze the feedback provided "
-        "for an agent's output and determine if it's helpful for "
-        "improvement. Suggest specific improvements if possible."
-    ),
-    output_type=FeedbackResult,
-)
+def create_prompt_adapter_agent(
+    model: Model | None = None,
+) -> Agent[None, AdaptedPrompt]:
+    """Create a prompt adapter agent with optional model override."""
+    return Agent(
+        model or get_model(),
+        system_prompt=PROMPT_ADAPTER_SYSTEM_PROMPT,
+        output_type=AdaptedPrompt,
+    )
+
+
+def create_task_agent(
+    model: Model | None = None,
+) -> Agent[LearningDeps, str]:
+    """Create a task agent with optional model override."""
+    agent: Agent[LearningDeps, str] = Agent(
+        model or get_model(),
+        system_prompt=TASK_AGENT_SYSTEM_PROMPT,
+        deps_type=LearningDeps,
+        output_type=str,
+    )
+    agent.system_prompt(_inject_examples)
+    return agent
+
+
+def create_feedback_evaluator_agent(
+    model: Model | None = None,
+) -> Agent[None, FeedbackResult]:
+    """Create a feedback evaluator agent with optional model override."""
+    return Agent(
+        model or get_model(),
+        system_prompt=FEEDBACK_EVALUATOR_SYSTEM_PROMPT,
+        output_type=FeedbackResult,
+    )
+
+
+# Default agents (created lazily for backward compatibility)
+_default_prompt_adapter: Agent[None, AdaptedPrompt] | None = None
+_default_task_agent: Agent[LearningDeps, str] | None = None
+_default_feedback_evaluator: Agent[None, FeedbackResult] | None = None
+
+
+def _get_default_prompt_adapter() -> Agent[None, AdaptedPrompt]:
+    global _default_prompt_adapter
+    if _default_prompt_adapter is None:
+        _default_prompt_adapter = create_prompt_adapter_agent()
+    return _default_prompt_adapter
+
+
+def _get_default_task_agent() -> Agent[LearningDeps, str]:
+    global _default_task_agent
+    if _default_task_agent is None:
+        _default_task_agent = create_task_agent()
+    return _default_task_agent
+
+
+def _get_default_feedback_evaluator() -> Agent[None, FeedbackResult]:
+    global _default_feedback_evaluator
+    if _default_feedback_evaluator is None:
+        _default_feedback_evaluator = create_feedback_evaluator_agent()
+    return _default_feedback_evaluator
+
+
+# Module-level aliases for backward compatibility with tests
+task_agent = create_task_agent()
+feedback_evaluator = create_feedback_evaluator_agent()
+prompt_adapter_agent = create_prompt_adapter_agent()
+
+
 # --8<-- [end:agents]
 
 
@@ -440,6 +490,8 @@ async def run_with_learning(
     input_text: str,
     store: ExperienceStore,
     use_examples: bool = True,
+    *,
+    task_agent: Agent[LearningDeps, str] | None = None,
 ) -> tuple[str, Experience | None]:
     """
     Run a task with few-shot learning context.
@@ -452,11 +504,14 @@ async def run_with_learning(
         input_text: Input for the task.
         store: Experience store for examples.
         use_examples: Whether to include examples in context.
+        task_agent: Optional task agent. If None, uses default.
 
     Returns:
         Tuple of (output string, recorded experience or None).
     """
     print(f"Running task: {task_type}")
+
+    agent = task_agent or globals()["task_agent"]
 
     # Create deps - examples are injected via @system_prompt decorator
     deps = LearningDeps(
@@ -471,7 +526,7 @@ async def run_with_learning(
             print(f"  Using {len(examples)} examples for context")
 
     # Run task - examples injected automatically via system prompt
-    result = await task_agent.run(input_text, deps=deps)
+    result = await agent.run(input_text, deps=deps)
     output = result.output
 
     print("  Task complete")
@@ -482,6 +537,8 @@ async def run_with_learning(
 async def process_feedback(
     output: str,
     feedback: str,
+    *,
+    evaluator: Agent[None, FeedbackResult] | None = None,
 ) -> FeedbackResult:
     """
     Process feedback about an agent output.
@@ -489,11 +546,13 @@ async def process_feedback(
     Args:
         output: The output that received feedback.
         feedback: The feedback provided.
+        evaluator: Optional evaluator agent. If None, uses default.
 
     Returns:
         FeedbackResult with analysis.
     """
-    result = await feedback_evaluator.run(
+    agent = evaluator or feedback_evaluator
+    result = await agent.run(
         f"Agent output:\n{output}\n\n"
         f"Feedback received:\n{feedback}\n\n"
         f"Analyze this feedback and determine if it's helpful."
@@ -504,6 +563,8 @@ async def process_feedback(
 async def adapt_prompt(
     original_prompt: str,
     failure_feedback: list[str],
+    *,
+    adapter: Agent[None, AdaptedPrompt] | None = None,
 ) -> AdaptedPrompt:
     """
     Adapt a system prompt based on failure feedback.
@@ -511,6 +572,7 @@ async def adapt_prompt(
     Args:
         original_prompt: The original system prompt.
         failure_feedback: List of feedback from failures.
+        adapter: Optional adapter agent. If None, uses default.
 
     Returns:
         AdaptedPrompt with improvements.
@@ -522,9 +584,10 @@ async def adapt_prompt(
             learnings_applied=[],
         )
 
+    agent = adapter or prompt_adapter_agent
     feedback_text = "\n".join(f"- {f}" for f in failure_feedback[-5:])
 
-    result = await prompt_adapter_agent.run(
+    result = await agent.run(
         f"Original system prompt:\n{original_prompt}\n\n"
         f"Failure feedback patterns:\n{feedback_text}\n\n"
         f"Create an improved prompt that addresses these issues."

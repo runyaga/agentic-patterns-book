@@ -34,6 +34,7 @@ from pydantic_ai import Agent
 from pydantic_ai.agent import AgentRunResult
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.messages import UserContent
+from pydantic_ai.models import Model
 from pydantic_ai.usage import RunUsage
 
 from agentic_patterns._models import get_model
@@ -216,16 +217,35 @@ class ClinicDiagnosis(BaseModel):
     suggestion: str = Field(description="Brief suggestion for the user")
 
 
-def _create_clinic_agent() -> Agent[None, ClinicDiagnosis]:
-    """Create the clinic agent for unknown error diagnosis."""
+CLINIC_SYSTEM_PROMPT = (
+    "You diagnose agent errors. Given an error message, determine if "
+    "retrying would help. Be concise. Don't suggest code changes."
+)
+
+
+def create_clinic_agent(
+    model: Model | None = None,
+) -> Agent[None, ClinicDiagnosis]:
+    """
+    Create a clinic agent for unknown error diagnosis.
+
+    Args:
+        model: pydantic-ai Model instance. If None, uses default model.
+
+    Returns:
+        Configured clinic agent.
+    """
     return Agent(
-        get_model(),
-        system_prompt=(
-            "You diagnose agent errors. Given an error message, determine if "
-            "retrying would help. Be concise. Don't suggest code changes."
-        ),
+        model or get_model(),
+        system_prompt=CLINIC_SYSTEM_PROMPT,
         output_type=ClinicDiagnosis,
     )
+
+
+# Backward compatibility alias
+def _create_clinic_agent() -> Agent[None, ClinicDiagnosis]:
+    """Create the clinic agent for unknown error diagnosis."""
+    return create_clinic_agent()
 
 
 async def _diagnose_unknown(
