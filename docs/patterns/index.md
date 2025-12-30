@@ -22,6 +22,7 @@ See [Idioms](../idioms.md) for pydantic-ai, pydantic_graph, and pydantic-evals p
 | 4 | [Reflection](04-reflection.md) | Self-evaluate and improve | ✅ |
 | 5 | [Tool Use](05-tool-use.md) | Interact with external tools | ✅ |
 | 6 | [Planning](06-planning.md) | Decompose goals into steps | ✅ |
+| 6b | [Dynamic Planning](06b-dynamic-planning.md) | Decide when to plan | ✅ |
 
 ### Coordination
 
@@ -74,6 +75,8 @@ Ch 1: Prompt Chaining (foundation)
       +-> Ch 10: MCP Integration (extends Ch 5)
       |
       +-> Ch 6: Planning (depends on Ch 1-5)
+          |
+          +-> Ch 6b: Dynamic Planning (extends Ch 6)
           |
           +-> Ch 7: Multi-Agent (depends on Ch 1-6)
               |
