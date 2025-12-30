@@ -28,6 +28,7 @@ from typing import Any
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic_ai import Agent
+from pydantic_ai.models import Model
 
 from agentic_patterns import get_model
 
@@ -584,28 +585,7 @@ class DynamicReprioritizer:
         return [e for e in self.history if e.task_id == task_id]
 
 
-@dataclass
-class PrioritizationAgent:
-    """
-    LLM-based intelligent task prioritization.
-
-    Uses an LLM to assess task priority with contextual understanding.
-    """
-
-    model_name: str = "gpt-oss:20b"
-    base_url: str = "http://localhost:11434/v1"
-
-    def _get_agent(self) -> Agent[None, PrioritizationResult]:
-        """Create the prioritization agent."""
-        model = get_model(
-            model_name=self.model_name,
-            base_url=self.base_url,
-        )
-
-        return Agent(
-            model,
-            output_type=PrioritizationResult,
-            system_prompt="""You are a task prioritization expert.
+PRIORITIZATION_SYSTEM_PROMPT = """You are a task prioritization expert.
 Analyze the given task and determine its priority level.
 
 Consider:
@@ -618,8 +598,58 @@ Priority levels:
 - P0 (CRITICAL): Must do immediately, blocking issue
 - P1 (HIGH): Should do soon, significant impact
 - P2 (MEDIUM): Important but can wait
-- P3 (LOW): Nice to have, low impact""",
-        )
+- P3 (LOW): Nice to have, low impact"""
+
+
+def create_prioritization_agent(
+    model: Model | None = None,
+) -> Agent[None, PrioritizationResult]:
+    """
+    Create a prioritization agent with optional model override.
+
+    Args:
+        model: pydantic-ai Model instance. If None, uses default model.
+
+    Returns:
+        Configured prioritization agent.
+    """
+    return Agent(
+        model or get_model(),
+        output_type=PrioritizationResult,
+        system_prompt=PRIORITIZATION_SYSTEM_PROMPT,
+    )
+
+
+# Default agent (created lazily for backward compatibility)
+_default_prioritization_agent: Agent[None, PrioritizationResult] | None = None
+
+
+def _get_default_prioritization_agent() -> Agent[None, PrioritizationResult]:
+    """Get or create the default prioritization agent."""
+    global _default_prioritization_agent
+    if _default_prioritization_agent is None:
+        _default_prioritization_agent = create_prioritization_agent()
+    return _default_prioritization_agent
+
+
+@dataclass
+class PrioritizationAgent:
+    """
+    LLM-based intelligent task prioritization.
+
+    Uses an LLM to assess task priority with contextual understanding.
+    """
+
+    agent: Agent[None, PrioritizationResult] | None = None
+    # Backward compatibility attributes (deprecated - use agent parameter)
+    model_name: str = "gpt-oss:20b"
+    base_url: str = "http://localhost:11434/v1"
+
+    def _get_agent(self) -> Agent[None, PrioritizationResult]:
+        """Get the configured agent (backward compat method)."""
+        if self.agent:
+            return self.agent
+        return _get_default_prioritization_agent()
 
     async def prioritize(
         self,

@@ -36,4 +36,4 @@ __all__ = [
     "run_goal_monitor",
     "on_escalate",
 ]
-__version__ = "0.1.0"
+__version__ = "0.7.0"

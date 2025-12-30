@@ -23,6 +23,7 @@ from pydantic import Field
 from pydantic import computed_field
 from pydantic_ai import Agent
 from pydantic_ai import RunContext
+from pydantic_ai.models import Model
 
 from agentic_patterns._models import get_fast_model
 from agentic_patterns._models import get_strong_model
@@ -118,24 +119,19 @@ class EvaluationContext:
 
 
 # --8<-- [start:agents]
-# Use fast model for generation (high throughput)
-# Use strong model for evaluation (quality judgment)
-fast_model = get_fast_model()
-strong_model = get_strong_model()
+GENERATOR_SYSTEM_PROMPT = (
+    "You are a creative problem solver. Generate a single approach "
+    "or step toward solving the given problem. Focus on making progress."
+)
 
-generator_agent: Agent[GenerationContext, Thought] = Agent(
-    fast_model,  # Fast model for quick generation
-    system_prompt=(
-        "You are a creative problem solver. Generate a single approach "
-        "or step toward solving the given problem. Focus on making progress."
-    ),
-    deps_type=GenerationContext,
-    output_type=Thought,
+EVALUATOR_SYSTEM_PROMPT = (
+    "You are a critical evaluator. Score the proposed approach from "
+    "0 to 10 based on: correctness, feasibility, and progress toward "
+    "the goal. Be strict but fair."
 )
 
 
-@generator_agent.system_prompt
-def inject_problem(ctx: RunContext[GenerationContext]) -> str:
+def _generator_prompt(ctx: RunContext[GenerationContext]) -> str:
     """Inject problem details and output constraints from typed context."""
     cfg = ctx.deps.output_config
     parts = [f"Problem: {ctx.deps.problem.description}"]
@@ -153,20 +149,7 @@ def inject_problem(ctx: RunContext[GenerationContext]) -> str:
     return "\n".join(parts)
 
 
-evaluator_agent: Agent[EvaluationContext, ThoughtEvaluation] = Agent(
-    strong_model,  # Strong model for quality evaluation
-    system_prompt=(
-        "You are a critical evaluator. Score the proposed approach from "
-        "0 to 10 based on: correctness, feasibility, and progress toward "
-        "the goal. Be strict but fair."
-    ),
-    deps_type=EvaluationContext,
-    output_type=ThoughtEvaluation,
-)
-
-
-@evaluator_agent.system_prompt
-def inject_evaluation_context(ctx: RunContext[EvaluationContext]) -> str:
+def _evaluator_prompt(ctx: RunContext[EvaluationContext]) -> str:
     """Inject problem, thought, and output constraints from typed context."""
     cfg = ctx.deps.output_config
     parts = [
@@ -187,6 +170,76 @@ def inject_evaluation_context(ctx: RunContext[EvaluationContext]) -> str:
     return "\n".join(parts)
 
 
+def create_generator_agent(
+    model: Model | None = None,
+) -> Agent[GenerationContext, Thought]:
+    """
+    Create a generator agent with optional model override.
+
+    Args:
+        model: pydantic-ai Model instance. If None, uses default fast model.
+
+    Returns:
+        Configured generator agent.
+    """
+    agent: Agent[GenerationContext, Thought] = Agent(
+        model or get_fast_model(),
+        system_prompt=GENERATOR_SYSTEM_PROMPT,
+        deps_type=GenerationContext,
+        output_type=Thought,
+    )
+    agent.system_prompt(_generator_prompt)
+    return agent
+
+
+def create_evaluator_agent(
+    model: Model | None = None,
+) -> Agent[EvaluationContext, ThoughtEvaluation]:
+    """
+    Create an evaluator agent with optional model override.
+
+    Args:
+        model: pydantic-ai Model instance. If None, uses default strong model.
+
+    Returns:
+        Configured evaluator agent.
+    """
+    agent: Agent[EvaluationContext, ThoughtEvaluation] = Agent(
+        model or get_strong_model(),
+        system_prompt=EVALUATOR_SYSTEM_PROMPT,
+        deps_type=EvaluationContext,
+        output_type=ThoughtEvaluation,
+    )
+    agent.system_prompt(_evaluator_prompt)
+    return agent
+
+
+# Default agents (created lazily on first use for backward compatibility)
+_default_generator: Agent[GenerationContext, Thought] | None = None
+_default_evaluator: Agent[EvaluationContext, ThoughtEvaluation] | None = None
+
+
+def _get_default_generator() -> Agent[GenerationContext, Thought]:
+    """Get or create the default generator agent."""
+    global _default_generator
+    if _default_generator is None:
+        _default_generator = create_generator_agent()
+    return _default_generator
+
+
+# Module-level aliases for backward compatibility with tests
+generator_agent = create_generator_agent()
+evaluator_agent = create_evaluator_agent()
+
+
+def _get_default_evaluator() -> Agent[EvaluationContext, ThoughtEvaluation]:
+    """Get or create the default evaluator agent."""
+    global _default_evaluator
+    if _default_evaluator is None:
+        _default_evaluator = create_evaluator_agent()
+    return _default_evaluator
+
+
 # --8<-- [end:agents]
 
 
@@ -194,6 +247,8 @@ def inject_evaluation_context(ctx: RunContext[EvaluationContext]) -> str:
 async def generate_thought(
     problem: ProblemStatement,
     config: OutputConfig | None = None,
+    *,
+    generator: Agent[GenerationContext, Thought] | None = None,
 ) -> Thought:
     """
     Generate a single candidate thought for a problem.
@@ -203,13 +258,15 @@ async def generate_thought(
     Args:
         problem: The structured problem statement.
         config: Output constraints (word limits, ASCII-only, etc.).
+        generator: Optional generator agent. If None, uses default.
 
     Returns:
         A Thought with content and reasoning.
     """
     with logfire.span("generate_thought"):
+        agent = generator or generator_agent
         ctx = GenerationContext(problem=problem, config=config)
-        result = await generator_agent.run("Generate an approach", deps=ctx)
+        result = await agent.run("Generate an approach", deps=ctx)
         return result.output
 
 
@@ -217,6 +274,8 @@ async def evaluate_thought(
     problem: ProblemStatement,
     thought: Thought,
     config: OutputConfig | None = None,
+    *,
+    evaluator: Agent[EvaluationContext, ThoughtEvaluation] | None = None,
 ) -> ThoughtEvaluation:
     """
     Evaluate a single thought against the problem.
@@ -227,21 +286,26 @@ async def evaluate_thought(
         problem: The structured problem statement.
         thought: The thought to evaluate.
         config: Output constraints (word limits, ASCII-only, etc.).
+        evaluator: Optional evaluator agent. If None, uses default.
 
     Returns:
         ThoughtEvaluation with score, validity, and feedback.
     """
     with logfire.span("evaluate_thought"):
+        agent = evaluator or evaluator_agent
         ctx = EvaluationContext(
             problem=problem, thought=thought, config=config
         )
-        result = await evaluator_agent.run("Evaluate this approach", deps=ctx)
+        result = await agent.run("Evaluate this approach", deps=ctx)
         return result.output
 
 
 async def generate_and_evaluate(
     problem: ProblemStatement,
     config: OutputConfig | None = None,
+    *,
+    generator: Agent[GenerationContext, Thought] | None = None,
+    evaluator: Agent[EvaluationContext, ThoughtEvaluation] | None = None,
 ) -> ScoredThought:
     """
     Generate and evaluate a single thought atomically.
@@ -252,13 +316,17 @@ async def generate_and_evaluate(
     Args:
         problem: The structured problem statement.
         config: Output constraints (word limits, ASCII-only, etc.).
+        generator: Optional generator agent. If None, uses default.
+        evaluator: Optional evaluator agent. If None, uses default.
 
     Returns:
         ScoredThought combining the thought with its evaluation.
     """
     with logfire.span("generate_and_evaluate"):
-        thought = await generate_thought(problem, config)
-        evaluation = await evaluate_thought(problem, thought, config)
+        thought = await generate_thought(problem, config, generator=generator)
+        evaluation = await evaluate_thought(
+            problem, thought, config, evaluator=evaluator
+        )
         return ScoredThought(thought=thought, evaluation=evaluation)
 
 
@@ -266,6 +334,9 @@ async def run_best_of_n(
     problem: ProblemStatement,
     n: int = 5,
     config: OutputConfig | None = None,
+    *,
+    generator: Agent[GenerationContext, Thought] | None = None,
+    evaluator: Agent[EvaluationContext, ThoughtEvaluation] | None = None,
 ) -> BestOfNResult:
     """
     Generate N candidate thoughts in parallel and select the best.
@@ -278,6 +349,8 @@ async def run_best_of_n(
         problem: The structured problem statement.
         n: Number of candidates to generate (default: 5).
         config: Output constraints (word limits, ASCII-only, etc.).
+        generator: Optional generator agent. If None, uses default.
+        evaluator: Optional evaluator agent. If None, uses default.
 
     Returns:
         BestOfNResult with all candidates sorted by score and the best.
@@ -286,7 +359,12 @@ async def run_best_of_n(
         logfire.info(f"Generating {n} candidates in parallel")
 
         # Generate and evaluate all candidates in parallel
-        tasks = [generate_and_evaluate(problem, config) for _ in range(n)]
+        tasks = [
+            generate_and_evaluate(
+                problem, config, generator=generator, evaluator=evaluator
+            )
+            for _ in range(n)
+        ]
         candidates = await asyncio.gather(*tasks)
 
         # Sort by score descending

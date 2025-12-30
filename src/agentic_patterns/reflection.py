@@ -20,6 +20,7 @@ from pydantic import Field
 from pydantic_ai import Agent
 from pydantic_ai import ModelRetry
 from pydantic_ai import RunContext
+from pydantic_ai.models import Model
 
 from agentic_patterns._models import get_model
 
@@ -54,38 +55,28 @@ class ReflectionDeps:
 
 
 # --8<-- [start:agents]
-# Initialize the model
-model = get_model()
-
-# Critic agent - evaluates content
-# Note: Critic is stateless, so deps_type is None
-critic_agent = Agent(
-    model,
-    system_prompt=(
-        "You are a critical reviewer. Evaluate the given content objectively. "
-        "Score from 0-10 where 8+ means acceptable quality. "
-        "Provide specific, actionable suggestions for improvement. "
-        "If content is repetitive or fails to address the prompt, score low."
-    ),
-    output_type=Critique,
+CRITIC_SYSTEM_PROMPT = (
+    "You are a critical reviewer. Evaluate the given content objectively. "
+    "Score from 0-10 where 8+ means acceptable quality. "
+    "Provide specific, actionable suggestions for improvement. "
+    "If content is repetitive or fails to address the prompt, score low."
 )
 
-# Producer agent - generates content
-producer_agent = Agent(
-    model,
-    system_prompt=(
-        "You are a skilled content producer. Generate high-quality content "
-        "based on the given task. If you receive feedback, use it to "
-        "improve your next draft significantly."
-    ),
-    deps_type=ReflectionDeps,
-    output_type=ProducerOutput,
-    retries=3,  # Allow up to 3 improvement cycles
+PRODUCER_SYSTEM_PROMPT = (
+    "You are a skilled content producer. Generate high-quality content "
+    "based on the given task. If you receive feedback, use it to "
+    "improve your next draft significantly."
 )
 
 
-@producer_agent.output_validator
-async def validate_content(
+def _producer_validator(
+    ctx: RunContext[ReflectionDeps], result: ProducerOutput
+) -> ProducerOutput:
+    """Validator logic for producer output."""
+    raise NotImplementedError("Use async version")
+
+
+async def _async_producer_validator(
     ctx: RunContext[ReflectionDeps], result: ProducerOutput
 ) -> ProducerOutput:
     """
@@ -102,8 +93,6 @@ async def validate_content(
     # Check acceptance criteria
     if critique.score < 8.0 and not critique.is_acceptable:
         print(f"  Feedback: {critique.feedback[:100]}...")
-        # Raising ModelRetry automatically feeds the error back to the model
-        # The model sees this as a previous tool error/rejection
         raise ModelRetry(
             f"Critique score {critique.score}/10. "
             f"Feedback: {critique.feedback}. "
@@ -114,27 +103,117 @@ async def validate_content(
     return result
 
 
+# Alias for backward compatibility with tests
+validate_content = _async_producer_validator
+
+
+def create_critic_agent(
+    model: Model | None = None,
+) -> Agent[None, Critique]:
+    """
+    Create a critic agent with optional model override.
+
+    Args:
+        model: pydantic-ai Model instance. If None, uses default model.
+
+    Returns:
+        Configured critic agent.
+    """
+    return Agent(
+        model or get_model(),
+        system_prompt=CRITIC_SYSTEM_PROMPT,
+        output_type=Critique,
+    )
+
+
+def create_producer_agent(
+    model: Model | None = None,
+    retries: int = 3,
+) -> Agent[ReflectionDeps, ProducerOutput]:
+    """
+    Create a producer agent with optional model override.
+
+    Args:
+        model: pydantic-ai Model instance. If None, uses default model.
+        retries: Max improvement cycles (default: 3).
+
+    Returns:
+        Configured producer agent with validator.
+    """
+    agent: Agent[ReflectionDeps, ProducerOutput] = Agent(
+        model or get_model(),
+        system_prompt=PRODUCER_SYSTEM_PROMPT,
+        deps_type=ReflectionDeps,
+        output_type=ProducerOutput,
+        retries=retries,
+    )
+    agent.output_validator(_async_producer_validator)
+    return agent
+
+
+# Default agents (created lazily for backward compatibility)
+_default_critic: Agent[None, Critique] | None = None
+_default_producer: Agent[ReflectionDeps, ProducerOutput] | None = None
+
+
+def _get_default_critic() -> Agent[None, Critique]:
+    """Get or create the default critic agent."""
+    global _default_critic
+    if _default_critic is None:
+        _default_critic = create_critic_agent()
+    return _default_critic
+
+
+def _get_default_producer() -> Agent[ReflectionDeps, ProducerOutput]:
+    """Get or create the default producer agent."""
+    global _default_producer
+    if _default_producer is None:
+        _default_producer = create_producer_agent()
+    return _default_producer
+
+
+# Module-level aliases for backward compatibility with tests
+producer_agent = create_producer_agent()
+critic_agent = create_critic_agent()
+
+
 # --8<-- [end:agents]
 
 
 # --8<-- [start:reflection]
-async def run_reflection(task: str) -> ProducerOutput:
+async def run_reflection(
+    task: str,
+    *,
+    producer: Agent[ReflectionDeps, ProducerOutput] | None = None,
+    critic: Agent[None, Critique] | None = None,
+) -> ProducerOutput:
     """
     Run the reflection process.
+
     The manual loop is gone. We simply run the producer,
     and PydanticAI handles the critique/retry loop internally.
+
+    Args:
+        task: The content generation task.
+        producer: Optional producer agent. If None, uses default.
+        critic: Optional critic agent. If None, uses default.
+
+    Returns:
+        ProducerOutput with the final content.
     """
     print(f"Starting reflection task: {task}")
 
-    deps = ReflectionDeps(critic_agent=critic_agent)
+    the_producer = producer or producer_agent
+    the_critic = critic or critic_agent
+
+    deps = ReflectionDeps(critic_agent=the_critic)
 
     try:
         # The agent will automatically retry if the validator raises ModelRetry
-        result = await producer_agent.run(task, deps=deps)
+        result = await the_producer.run(task, deps=deps)
         return result.output
     except Exception as e:
         print(f"Reflection failed after retries: {e}")
-        # Return what we have, or re-raise
         raise
 
 
