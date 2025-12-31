@@ -1,4 +1,5 @@
 from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
@@ -76,15 +77,29 @@ async def test_llm_extractor_mock():
         links=[],
     )
 
+    # Mock token usage
+    mock_usage = MagicMock()
+    mock_usage.input_tokens = 100
+    mock_usage.output_tokens = 50
+
+    # Mock the agent run result
+    mock_agent_result = MagicMock()
+    mock_agent_result.data = mock_result
+    mock_agent_result.usage.return_value = mock_usage
+
     # Mock the agent run
     with patch.object(
         extractor_agent, "run", new_callable=AsyncMock
     ) as mock_run:
-        mock_run.return_value.data = mock_result
+        mock_run.return_value = mock_agent_result
 
         extractor = LLMExtractor()
         result = await extractor.extract("file.py", "content")
 
         assert len(result.entities) == 1
         assert result.entities[0].name == "Concept"
+        # Check token accounting
+        assert result.token_usage.input_tokens == 100
+        assert result.token_usage.output_tokens == 50
+        assert result.token_usage.total_tokens == 150
         mock_run.assert_called_once()

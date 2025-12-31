@@ -24,6 +24,7 @@ from agentic_patterns.domain_exploration import KnowledgeMap
 from agentic_patterns.domain_exploration import KnowledgeStore
 from agentic_patterns.domain_exploration import SemanticEntity
 from agentic_patterns.domain_exploration import SemanticLink
+from agentic_patterns.domain_exploration import TokenUsage
 from agentic_patterns.domain_exploration import explore_domain
 from agentic_patterns.exception_recovery import ErrorCategory
 from agentic_patterns.exception_recovery import RecoveryConfig
@@ -63,6 +64,7 @@ __all__ = [
     "KnowledgeStore",
     "SemanticEntity",
     "SemanticLink",
+    "TokenUsage",
     # Exception Recovery (Ch 12)
     "recoverable_run",
     "RecoveryConfig",

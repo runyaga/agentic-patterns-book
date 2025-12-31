@@ -98,6 +98,27 @@ class SemanticLink(BaseModel):
     weight: float = 1.0
 
 
+class TokenUsage(BaseModel):
+    """Token usage from LLM calls."""
+
+    input_tokens: int = Field(default=0, description="Input tokens consumed")
+    output_tokens: int = Field(
+        default=0, description="Output tokens generated"
+    )
+
+    @property
+    def total_tokens(self) -> int:
+        """Total tokens used."""
+        return self.input_tokens + self.output_tokens
+
+    def __add__(self, other: TokenUsage) -> TokenUsage:
+        """Add two TokenUsage instances."""
+        return TokenUsage(
+            input_tokens=self.input_tokens + other.input_tokens,
+            output_tokens=self.output_tokens + other.output_tokens,
+        )
+
+
 class ExplorationFrontier(BaseModel):
     """Tracks what has been explored and what remains."""
 
@@ -114,6 +135,14 @@ class KnowledgeMap(BaseModel):
     root_path: str
     last_updated: datetime = Field(default_factory=datetime.now)
     frontier_state: ExplorationFrontier | None = None
+    # Token accounting
+    token_usage: TokenUsage = Field(default_factory=TokenUsage)
+    files_processed: int = Field(
+        default=0, description="Number of files processed"
+    )
+    llm_calls: int = Field(
+        default=0, description="Number of LLM extraction calls"
+    )
 
 
 class ExplorationBoundary(BaseModel):
@@ -289,6 +318,14 @@ class ExtractionResult(BaseModel):
     links: list[SemanticLink]
 
 
+class LLMExtractionResult(BaseModel):
+    """Result of LLM extraction including token usage."""
+
+    entities: list[SemanticEntity] = Field(default_factory=list)
+    links: list[SemanticLink] = Field(default_factory=list)
+    token_usage: TokenUsage = Field(default_factory=TokenUsage)
+
+
 @dataclass
 class ExtractionDeps:
     """Dependencies for the extraction agent."""
@@ -438,13 +475,40 @@ class LLMExtractor:
             create_extractor_agent(model) if model else extractor_agent
         )
 
-    async def extract(self, file_path: str, content: str) -> ExtractionResult:
-        """Extract semantic entities from file content."""
+    async def extract(
+        self, file_path: str, content: str
+    ) -> LLMExtractionResult:
+        """
+        Extract semantic entities from file content.
+
+        Returns:
+            LLMExtractionResult with entities, links, and token usage.
+        """
         result = await self._agent.run(
             "Extract semantic entities and relationships.",
             deps=ExtractionDeps(file_path=file_path, content=content),
         )
-        return result.data
+
+        # Extract token usage from pydantic-ai result
+        usage = result.usage()
+        token_usage = TokenUsage(
+            input_tokens=usage.input_tokens or 0,
+            output_tokens=usage.output_tokens or 0,
+        )
+
+        logfire.info(
+            "LLM extraction complete",
+            file=file_path,
+            entities=len(result.data.entities),
+            input_tokens=token_usage.input_tokens,
+            output_tokens=token_usage.output_tokens,
+        )
+
+        return LLMExtractionResult(
+            entities=result.data.entities,
+            links=result.data.links,
+            token_usage=token_usage,
+        )
 
 
 # --8<-- [end:extraction]
@@ -461,6 +525,10 @@ class CartographerState:
     frontier: ExplorationFrontier = field(default_factory=ExplorationFrontier)
     store: KnowledgeStore | None = None
     current_depth: int = 0
+    # Token accounting
+    total_token_usage: TokenUsage = field(default_factory=TokenUsage)
+    files_processed: int = 0
+    llm_calls: int = 0
 
 
 @dataclass
@@ -583,6 +651,11 @@ class ExtractNode(BaseNode[CartographerState, CartographerDeps, KnowledgeMap]):
         ast_extractor = ASTExtractor()
         llm_extractor = LLMExtractor(model=ctx.deps.model)
 
+        # Token accounting for this batch
+        batch_token_usage = TokenUsage()
+        batch_llm_calls = 0
+        batch_files_processed = 0
+
         with logfire.span(
             "extract_node",
             file_count=len(self.files_to_process),
@@ -599,6 +672,7 @@ class ExtractNode(BaseNode[CartographerState, CartographerDeps, KnowledgeMap]):
                     )
                     continue
 
+                batch_files_processed += 1
                 ast_result = ast_extractor.extract(file_path, content)
                 extracted_entities.extend(ast_result.entities)
                 extracted_links.extend(ast_result.links)
@@ -610,6 +684,11 @@ class ExtractNode(BaseNode[CartographerState, CartographerDeps, KnowledgeMap]):
                         )
                         extracted_entities.extend(llm_result.entities)
                         extracted_links.extend(llm_result.links)
+                        # Accumulate token usage
+                        batch_token_usage = (
+                            batch_token_usage + llm_result.token_usage
+                        )
+                        batch_llm_calls += 1
                     except Exception as e:
                         logfire.warn(
                             "LLM extraction failed",
@@ -617,10 +696,21 @@ class ExtractNode(BaseNode[CartographerState, CartographerDeps, KnowledgeMap]):
                             error=str(e),
                         )
 
+            # Update state with token accounting
+            ctx.state.total_token_usage = (
+                ctx.state.total_token_usage + batch_token_usage
+            )
+            ctx.state.files_processed += batch_files_processed
+            ctx.state.llm_calls += batch_llm_calls
+
             logfire.info(
                 "Extraction complete",
                 entities_found=len(extracted_entities),
                 links_found=len(extracted_links),
+                batch_input_tokens=batch_token_usage.input_tokens,
+                batch_output_tokens=batch_token_usage.output_tokens,
+                total_input_tokens=ctx.state.total_token_usage.input_tokens,
+                total_output_tokens=ctx.state.total_token_usage.output_tokens,
             )
 
         return MapNode(
@@ -690,11 +780,22 @@ class CompleteNode(
             store.frontier_state = ctx.state.frontier
 
             km = store.to_knowledge_map()
+
+            # Add token accounting to the result
+            km.token_usage = ctx.state.total_token_usage
+            km.files_processed = ctx.state.files_processed
+            km.llm_calls = ctx.state.llm_calls
+
             logfire.info(
                 "Exploration complete",
                 total_entities=len(km.entities),
                 total_links=len(km.links),
                 explored_paths=len(ctx.state.frontier.explored),
+                files_processed=km.files_processed,
+                llm_calls=km.llm_calls,
+                input_tokens=km.token_usage.input_tokens,
+                output_tokens=km.token_usage.output_tokens,
+                total_tokens=km.token_usage.total_tokens,
             )
 
             if ctx.deps.storage_path:
@@ -795,11 +896,43 @@ if __name__ == "__main__":
                 f"[bold]Root:[/bold] {km.root_path}\n"
                 f"[bold]Entities:[/bold] {len(km.entities)}\n"
                 f"[bold]Links:[/bold] {len(km.links)}\n"
+                f"[bold]Files Processed:[/bold] {km.files_processed}\n"
                 f"[bold]Updated:[/bold] {km.last_updated.isoformat()}",
                 title="Knowledge Map",
                 border_style="blue",
             )
         )
+
+        # Token accounting panel (only show if LLM was used)
+        if km.llm_calls > 0:
+            token_table = Table(
+                title="[bold magenta]Token Accounting[/bold]",
+                show_header=True,
+                header_style="bold magenta",
+            )
+            token_table.add_column("Metric", width=20)
+            token_table.add_column("Value", width=15, justify="right")
+
+            token_table.add_row("LLM Calls", str(km.llm_calls))
+            token_table.add_row(
+                "Input Tokens", f"{km.token_usage.input_tokens:,}"
+            )
+            token_table.add_row(
+                "Output Tokens", f"{km.token_usage.output_tokens:,}"
+            )
+            token_table.add_row(
+                "[bold]Total Tokens[/bold]",
+                f"[bold]{km.token_usage.total_tokens:,}[/bold]",
+            )
+            if km.llm_calls > 0:
+                avg = km.token_usage.total_tokens // km.llm_calls
+                token_table.add_row("Avg Tokens/Call", f"{avg:,}")
+
+            console.print(token_table)
+            console.print()
+        else:
+            console.print("[dim]Dry run mode - no LLM calls made[/dim]")
+            console.print()
 
         # Entity breakdown by type
         type_counts: dict[str, int] = {}
