@@ -16,7 +16,7 @@
 
 ## About
 
-A Python port of 15 agentic AI patterns from the **Gulli** book:
+A Python port of 23 agentic AI patterns from the **Gulli** book:
 
 > **Agentic Design Patterns: A Hands-On Guide to Building Intelligent Systems**
 > by Antonio Gulli (Springer, 2025)
@@ -63,6 +63,7 @@ uv venv && uv pip install -e ".[dev]" --python .venv/bin/python
 | [Reflection](src/agentic_patterns/reflection.py) | 4 | Producer-critic self-improvement loop |
 | [Tool Use](src/agentic_patterns/tool_use.py) | 5 | External tools (weather, calculator, search) |
 | [Planning](src/agentic_patterns/planning.py) | 6 | Goal decomposition into steps |
+| [Dynamic Planning](src/agentic_patterns/dynamic_planning.py) | 6b | Decide when to plan vs act |
 | [Multi-Agent](src/agentic_patterns/multi_agent.py) | 7 | Supervisor and network collaboration |
 | [Memory](src/agentic_patterns/memory.py) | 8 | Buffer, window, and summary memory |
 | [Learning](src/agentic_patterns/learning.py) | 9 | Experience-based adaptation |
@@ -71,13 +72,14 @@ uv venv && uv pip install -e ".[dev]" --python .venv/bin/python
 | [Exception Recovery](src/agentic_patterns/exception_recovery.py) | 12 | Phoenix Protocol: Clinic agent for error diagnosis |
 | [Human-in-Loop](src/agentic_patterns/human_in_loop.py) | 13 | Escalation and approval workflows |
 | [Knowledge Retrieval](src/agentic_patterns/knowledge_retrieval.py) | 14 | RAG pipeline |
-| [Agent Marketplace](docs/patterns/15-agent-marketplace.md) | 15 | (Spec) The Agora: Decentralized bidding |
+| [Agent Marketplace](src/agentic_patterns/agent_marketplace.py) | 15 | The Agora: Decentralized bidding |
 | [Resource-Aware](src/agentic_patterns/resource_aware.py) | 16 | Budget management and model selection |
-| [Reasoning Weaver](docs/patterns/17-reasoning-weaver.md) | 17 | (Spec) Tree of Thoughts topology |
+| [Thought Candidates](src/agentic_patterns/thought_candidates.py) | 17a | Best-of-N sampling |
+| [Tree of Thoughts](src/agentic_patterns/tree_of_thoughts.py) | 17b | Multi-level exploration |
 | [Guardrails](src/agentic_patterns/guardrails.py) | 18 | Input/output validation and safety |
 | [Evaluation](src/agentic_patterns/evaluation.py) | 19 | Performance metrics and monitoring |
 | [Prioritization](src/agentic_patterns/prioritization.py) | 20 | Task ranking and priority queues |
-| [Domain Exploration](docs/patterns/21-domain-exploration.md) | 21 | The Cartographer: Knowledge graph mapping |
+| [Domain Exploration](src/agentic_patterns/domain_exploration.py) | 21 | The Cartographer: Knowledge graph mapping |
 
 ## Development
 
