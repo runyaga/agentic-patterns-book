@@ -27,7 +27,7 @@ This is a learning exercise, not a production recommendation.
 
 ## What is this?
 
-A Python port of 21 agentic AI patterns from the **Gulli** book:
+A Python port of 23 agentic AI patterns from the **Gulli** book:
 
 > *Agentic Design Patterns: A Hands-On Guide to Building Intelligent Systems*
 > by Antonio Gulli (Springer, 2025)
@@ -56,7 +56,7 @@ See [Getting Started](getting-started.md) for full setup instructions.
 
 ## Patterns Overview
 
-19 implemented patterns, 2 specifications. See [full pattern index](patterns/index.md).
+23 implemented patterns. See [full pattern index](patterns/index.md).
 
 | Category | Patterns |
 |----------|----------|
@@ -64,7 +64,7 @@ See [Getting Started](getting-started.md) for full setup instructions.
 | **Reasoning** | [Reflection](patterns/04-reflection.md), [Tool Use](patterns/05-tool-use.md), [Planning](patterns/06-planning.md), [Dynamic Planning](patterns/06b-dynamic-planning.md) |
 | **Coordination** | [Multi-Agent](patterns/07-multi-agent.md), [Memory](patterns/08-memory.md), [Learning](patterns/09-learning.md) |
 | **Integration** | [MCP Integration](patterns/10-mcp-integration.md), [Goal Monitoring](patterns/11-goal-monitoring.md), [Exception Recovery](patterns/12-exception-recovery.md) |
-| **Advanced** | [Human-in-Loop](patterns/13-human-in-loop.md), [Knowledge Retrieval](patterns/14-knowledge-retrieval.md), [Agent Marketplace](patterns/15-agent-marketplace.md), [Resource Optimization](patterns/16-resource-optimization.md), [Thought Candidates](patterns/17a-thought-candidates.md), [Tree of Thoughts](patterns/17b-tree-of-thoughts.md), [Guardrails](patterns/18-guardrails.md), [Evaluation](patterns/19-evaluation-monitoring.md), [Prioritization](patterns/20-prioritization.md) |
+| **Advanced** | [Human-in-Loop](patterns/13-human-in-loop.md), [Knowledge Retrieval](patterns/14-knowledge-retrieval.md), [Agent Marketplace](patterns/15-agent-marketplace.md), [Resource Optimization](patterns/16-resource-optimization.md), [Thought Candidates](patterns/17a-thought-candidates.md), [Tree of Thoughts](patterns/17b-tree-of-thoughts.md), [Guardrails](patterns/18-guardrails.md), [Evaluation](patterns/19-evaluation-monitoring.md), [Prioritization](patterns/20-prioritization.md), [Domain Exploration](patterns/21-domain-exploration.md) |
 
 ## Reproduce This
 

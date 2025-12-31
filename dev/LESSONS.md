@@ -66,9 +66,9 @@ flatter structure:
 
 ```
 src/agentic_patterns/
-├── prompt_chaining.py
-├── routing.py
-└── parallelization.py
+    prompt_chaining.py
+    routing.py
+    parallelization.py
 ```
 
 ### Keep tests separate
@@ -78,9 +78,9 @@ Standard Python layout with tests outside src:
 ```
 src/agentic_patterns/...
 tests/
-├── conftest.py
-├── test_prompt_chaining.py
-└── test_routing.py
+    conftest.py
+    test_prompt_chaining.py
+    test_routing.py
 ```
 
 ## pydantic-ai Specifics
@@ -317,3 +317,39 @@ def test_plan_step_valid():
     step = PlanStep(step_number=1, description="Test", expected_output="Out")
     assert step.status == StepStatus.PENDING
 ```
+
+## Domain Exploration (The Cartographer)
+
+### Dependency Weights vs. Capabilities
+For a lightweight "Discovery Agent," avoid heavy scientific libraries unless
+strictly necessary.
+
+- **Issue:** `networkx.pagerank` defaults to `scipy`, which is a 100MB+ binary
+  dependency.
+- **Solution:** Use simpler centrality metrics like `degree_centrality` (which is
+  pure Python) or catch the import error and fallback gracefully.
+- **Lesson:** If you import a library for one function, check its transitive
+  dependencies.
+
+### Atomic Persistence
+When building agents that run for minutes/hours (like crawlers), file corruption
+on interruption is a major risk.
+
+- **Anti-Pattern:** `open(file, 'w').write(json)` directly.
+- **Idiomatic Pattern:** Write to temp, then rename.
+  ```python
+  temp = path.with_suffix(path.suffix + ".tmp")
+  temp.write_text(content)
+  temp.replace(path)  # Atomic on POSIX
+  ```
+
+### Hybrid Extraction (AST + LLM)
+Combining static analysis with LLM inference requires a strict "Source of Truth"
+hierarchy.
+
+- **AST:** Provides the *Skeleton* (Nodes, Links, Locations). It is 100%
+  accurate but semantically shallow.
+- **LLM:** Provides the *Flesh* (Summaries, Concepts). It is semantically rich
+  but structurally hallucination-prone.
+- **Strategy:** Let AST build the graph. Let LLM *decorate* the nodes. Do not
+  let LLM invent new code nodes unless they are purely conceptual.

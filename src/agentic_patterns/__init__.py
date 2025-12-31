@@ -19,6 +19,13 @@ from agentic_patterns.agent_marketplace import TaskRFP
 from agentic_patterns.agent_marketplace import WeightedScoreStrategy
 from agentic_patterns.agent_marketplace import create_bidder_agent
 from agentic_patterns.agent_marketplace import run_marketplace_task
+from agentic_patterns.domain_exploration import ExplorationBoundary
+from agentic_patterns.domain_exploration import KnowledgeMap
+from agentic_patterns.domain_exploration import KnowledgeStore
+from agentic_patterns.domain_exploration import SemanticEntity
+from agentic_patterns.domain_exploration import SemanticLink
+from agentic_patterns.domain_exploration import TokenUsage
+from agentic_patterns.domain_exploration import explore_domain
 from agentic_patterns.exception_recovery import ErrorCategory
 from agentic_patterns.exception_recovery import RecoveryConfig
 from agentic_patterns.exception_recovery import is_retryable
@@ -30,7 +37,6 @@ from agentic_patterns.goal_monitoring import on_escalate
 from agentic_patterns.goal_monitoring import run_goal_monitor
 from agentic_patterns.mcp_integration import MCPDeps
 from agentic_patterns.mcp_integration import create_mcp_agent
-from agentic_patterns.mcp_integration import run_with_mcp_tools
 
 __all__ = [
     "get_model",
@@ -51,13 +57,20 @@ __all__ = [
     # Production Features (Ch 15c)
     "AgoraCallbacks",
     "AgoraConfig",
+    # Domain Exploration / Cartographer (Ch 21)
+    "explore_domain",
+    "ExplorationBoundary",
+    "KnowledgeMap",
+    "KnowledgeStore",
+    "SemanticEntity",
+    "SemanticLink",
+    "TokenUsage",
     # Exception Recovery (Ch 12)
     "recoverable_run",
     "RecoveryConfig",
     "ErrorCategory",
     "is_retryable",
     # MCP Integration (Ch 10)
-    "run_with_mcp_tools",
     "create_mcp_agent",
     "MCPDeps",
     # Goal Monitoring (Ch 11)

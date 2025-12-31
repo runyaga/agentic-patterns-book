@@ -53,7 +53,7 @@ See [Idioms](../idioms.md) for pydantic-ai, pydantic_graph, and pydantic-evals p
 | 18 | [Guardrails](18-guardrails.md) | Safety and filtering | ✅ |
 | 19 | [Evaluation & Monitoring](19-evaluation-monitoring.md) | Observability | ✅ |
 | 20 | [Prioritization](20-prioritization.md) | Task scheduling | ✅ |
-| 21 | [Domain Exploration](21-domain-exploration.md) | Knowledge graph mapping | 📋 Spec |
+| 21 | [Domain Exploration](21-domain-exploration.md) | Knowledge graph mapping | ✅ |
 
 ## Pattern Complexity
 
