@@ -31,6 +31,7 @@ from __future__ import annotations
 import ast
 import fnmatch
 import hashlib
+import re
 from dataclasses import dataclass
 from dataclasses import field
 from datetime import datetime
@@ -40,6 +41,7 @@ from typing import Literal
 
 import logfire
 import networkx as nx
+from marktripy.parsers.markdown_it import MarkdownItParser
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic_ai import Agent
@@ -69,6 +71,10 @@ class SemanticEntity(BaseModel):
         "concept",
         "document",
         "api_endpoint",
+        # Markdown entity types
+        "section",
+        "code_reference",
+        "diagram",
     ] = Field(description="Type of entity")
     summary: str = Field(description="Brief description of the entity")
     location: str = Field(
@@ -417,6 +423,197 @@ class ASTExtractor:
         return ast.get_docstring(node)
 
 
+# --- Markdown Extraction ---
+
+# Regex for --8<-- snippet markers (not in marktripy AST)
+SNIPPET_RE = re.compile(r'--8<--\s*"([^"]+)"')
+
+
+class MarkdownExtractor:
+    """Extracts structural entities from Markdown files using marktripy."""
+
+    def __init__(self) -> None:
+        self._parser = MarkdownItParser()
+
+    def extract(self, file_path: str, content: str) -> ExtractionResult:
+        """Extract structure from a markdown file using AST parsing."""
+        entities: list[SemanticEntity] = []
+        links: list[SemanticLink] = []
+
+        scope_name = self._path_to_scope(file_path)
+        doc_id = generate_entity_id("document", scope_name, "__doc__")
+
+        # Parse markdown to AST
+        ast = self._parser.parse(content)
+
+        # Extract title from first heading or filename
+        title = self._extract_title(ast) or Path(file_path).stem
+        entities.append(
+            SemanticEntity(
+                id=doc_id,
+                name=title,
+                entity_type="document",
+                summary=f"Documentation: {title}",
+                location=file_path,
+            )
+        )
+
+        # Walk AST to extract structure
+        diagram_count = 0
+        for node in ast.walk():
+            if node.type == "heading":
+                # Get heading text from children
+                heading_text = self._get_text_content(node)
+                level = node.attrs.get("level", 1) if node.attrs else 1
+                section_id = generate_entity_id(
+                    "section", scope_name, heading_text
+                )
+                entities.append(
+                    SemanticEntity(
+                        id=section_id,
+                        name=heading_text,
+                        entity_type="section",
+                        summary=f"H{level}: {heading_text}",
+                        location=file_path,
+                        metadata={"level": level},
+                    )
+                )
+                links.append(
+                    SemanticLink(
+                        source_id=doc_id,
+                        target_id=section_id,
+                        relationship="contains",
+                    )
+                )
+
+            elif node.type == "code_block":
+                block_content = node.content or ""
+                lang = node.attrs.get("language", "") if node.attrs else ""
+
+                # Check for mermaid diagrams
+                if lang == "mermaid":
+                    diagram_type = self._detect_diagram_type(block_content)
+                    diagram_id = generate_entity_id(
+                        "diagram", scope_name, f"mermaid_{diagram_count}"
+                    )
+                    diagram_count += 1
+                    entities.append(
+                        SemanticEntity(
+                            id=diagram_id,
+                            name=f"{diagram_type} diagram",
+                            entity_type="diagram",
+                            summary=f"Mermaid {diagram_type} diagram",
+                            location=file_path,
+                            metadata={"diagram_type": diagram_type},
+                        )
+                    )
+                    links.append(
+                        SemanticLink(
+                            source_id=doc_id,
+                            target_id=diagram_id,
+                            relationship="contains",
+                        )
+                    )
+
+                # Check for --8<-- snippet references in code blocks
+                for match in SNIPPET_RE.finditer(block_content):
+                    snippet_ref = match.group(1)
+                    ref_id = generate_entity_id(
+                        "code_ref", scope_name, snippet_ref
+                    )
+                    entities.append(
+                        SemanticEntity(
+                            id=ref_id,
+                            name=snippet_ref,
+                            entity_type="code_reference",
+                            summary=f"Code snippet from {snippet_ref}",
+                            location=file_path,
+                            metadata={
+                                "source_file": snippet_ref.split(":")[0]
+                            },
+                        )
+                    )
+                    links.append(
+                        SemanticLink(
+                            source_id=doc_id,
+                            target_id=ref_id,
+                            relationship="references",
+                        )
+                    )
+
+        # Also check raw content for --8<-- outside code blocks
+        for match in SNIPPET_RE.finditer(content):
+            snippet_ref = match.group(1)
+            ref_id = generate_entity_id("code_ref", scope_name, snippet_ref)
+            # Avoid duplicates
+            if not any(e.id == ref_id for e in entities):
+                entities.append(
+                    SemanticEntity(
+                        id=ref_id,
+                        name=snippet_ref,
+                        entity_type="code_reference",
+                        summary=f"Code snippet from {snippet_ref}",
+                        location=file_path,
+                        metadata={"source_file": snippet_ref.split(":")[0]},
+                    )
+                )
+                links.append(
+                    SemanticLink(
+                        source_id=doc_id,
+                        target_id=ref_id,
+                        relationship="references",
+                    )
+                )
+
+        return ExtractionResult(entities=entities, links=links)
+
+    def _extract_title(self, ast: Any) -> str | None:
+        """Extract first H1 heading as title."""
+        for node in ast.walk():
+            if node.type == "heading":
+                level = node.attrs.get("level", 1) if node.attrs else 1
+                if level == 1:
+                    return self._get_text_content(node)
+        return None
+
+    def _get_text_content(self, node: Any) -> str:
+        """Recursively get text content from a node."""
+        if node.content:
+            return node.content
+        if hasattr(node, "children") and node.children:
+            return "".join(
+                self._get_text_content(child) for child in node.children
+            )
+        return ""
+
+    def _path_to_scope(self, file_path: str) -> str:
+        """Convert file path to scope identifier."""
+        p = Path(file_path)
+        parts = list(p.parts)
+        if parts[-1].endswith(".md"):
+            parts[-1] = parts[-1][:-3]
+        for marker in ("docs", "dev", "src"):
+            if marker in parts:
+                idx = parts.index(marker)
+                return ".".join(parts[idx:])
+        return ".".join(parts[-3:])
+
+    def _detect_diagram_type(self, content: str) -> str:
+        """Detect mermaid diagram type from content."""
+        first_line = content.split("\n")[0].strip().lower()
+        if "flowchart" in first_line or "graph" in first_line:
+            return "flowchart"
+        if "sequence" in first_line:
+            return "sequence"
+        if "state" in first_line:
+            return "state"
+        if "class" in first_line:
+            return "class"
+        if "er" in first_line:
+            return "er"
+        return "diagram"
+
+
 # --- LLM Extraction ---
 
 EXTRACTOR_SYSTEM_PROMPT = (
@@ -571,54 +768,57 @@ class ExploreNode(BaseNode[CartographerState, CartographerDeps, KnowledgeMap]):
             if ctx.state.store is not None:
                 root_path = ctx.state.store.root_path
 
-            for path in to_explore:
-                if path in frontier.explored:
-                    continue
+        for path in to_explore:
+            if path in frontier.explored:
+                continue
 
-                depth = frontier.depth_map.get(path, 0)
-                if depth > boundary.max_depth:
-                    continue
+            # Check depth
+            depth = frontier.depth_map.get(path, 0)
+            if depth > boundary.max_depth:
+                continue
 
-                frontier.explored.add(path)
-                p = Path(path)
-                if not p.exists():
-                    continue
+            frontier.explored.add(path)
+            p = Path(path)
+            if not p.exists():
+                continue
 
-                if p.is_dir():
-                    try:
-                        for child in p.iterdir():
-                            child_str = str(child)
-                            # Compute relative path for matching
-                            try:
-                                rel_path = child.relative_to(
-                                    Path(root_path).resolve()
-                                )
-                            except ValueError:
-                                rel_path = child
-
-                            # Filter child before adding
-                            exclude = any(
-                                _is_match(rel_path, pattern)
-                                for pattern in boundary.exclude_patterns
+            # Discovery Heartbeat
+            if p.is_dir():
+                print(f"   [Scout] Entering directory: {p.name}/")
+                try:
+                    for child in p.iterdir():
+                        child_str = str(child)
+                        # Compute relative path for matching
+                        try:
+                            rel_path = child.relative_to(
+                                Path(root_path).resolve()
                             )
-                            if exclude:
-                                continue
+                        except ValueError:
+                            rel_path = child
 
-                            if child.is_dir():
-                                if child_str not in frontier.explored:
-                                    frontier.pending.append(child_str)
-                                    frontier.depth_map[child_str] = depth + 1
-                            elif child.is_file():
-                                include = any(
-                                    _is_match(rel_path, pattern)
-                                    for pattern in boundary.include_patterns
-                                )
-                                if include:
-                                    discovered_files.append(child_str)
-                    except PermissionError:
-                        logfire.warn("Permission denied", path=path)
-                elif p.is_file():
-                    discovered_files.append(path)
+                        # Filter child before adding
+                        exclude = any(
+                            _is_match(rel_path, pattern)
+                            for pattern in boundary.exclude_patterns
+                        )
+                        if exclude:
+                            continue
+
+                        if child.is_dir():
+                            if child_str not in frontier.explored:
+                                frontier.pending.append(child_str)
+                                frontier.depth_map[child_str] = depth + 1
+                        elif child.is_file():
+                            include = any(
+                                _is_match(rel_path, pattern)
+                                for pattern in boundary.include_patterns
+                            )
+                            if include:
+                                discovered_files.append(child_str)
+                except PermissionError:
+                    logfire.warn("Permission denied", path=path)
+            elif p.is_file():
+                discovered_files.append(path)
 
             logfire.info(
                 "Exploration batch complete",
@@ -649,6 +849,7 @@ class ExtractNode(BaseNode[CartographerState, CartographerDeps, KnowledgeMap]):
         extracted_entities: list[SemanticEntity] = []
         extracted_links: list[SemanticLink] = []
         ast_extractor = ASTExtractor()
+        md_extractor = MarkdownExtractor()
         llm_extractor = LLMExtractor(model=ctx.deps.model)
 
         # Token accounting for this batch
@@ -673,12 +874,25 @@ class ExtractNode(BaseNode[CartographerState, CartographerDeps, KnowledgeMap]):
                     continue
 
                 batch_files_processed += 1
-                ast_result = ast_extractor.extract(file_path, content)
-                extracted_entities.extend(ast_result.entities)
-                extracted_links.extend(ast_result.links)
+                file_name = Path(file_path).name
+
+                # Choose extractor based on file type
+                if file_path.endswith(".py"):
+                    print(f"   [Analyzer] AST: {file_name}")
+                    result = ast_extractor.extract(file_path, content)
+                elif file_path.endswith(".md"):
+                    print(f"   [Analyzer] MD:  {file_name}")
+                    result = md_extractor.extract(file_path, content)
+                else:
+                    # Skip unsupported file types
+                    continue
+
+                extracted_entities.extend(result.entities)
+                extracted_links.extend(result.links)
 
                 if not boundary.dry_run:
                     try:
+                        print(f"   [Brain] Semantic: {file_name}")
                         llm_result = await llm_extractor.extract(
                             file_path, content
                         )
