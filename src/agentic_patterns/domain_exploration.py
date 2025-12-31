@@ -1483,13 +1483,85 @@ async def explore_domain(
 
 # --8<-- [start:main]
 if __name__ == "__main__":
+    import argparse
     import asyncio
-    import sys
 
     from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
     from rich.tree import Tree
+
+    parser = argparse.ArgumentParser(
+        prog="python -m agentic_patterns.domain_exploration",
+        description="The Cartographer: Map codebases with AST + LLM",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Dry run (fast, AST only)
+  python -m agentic_patterns.domain_exploration
+
+  # Explore specific directory
+  python -m agentic_patterns.domain_exploration src/
+
+  # Enable LLM semantic analysis
+  python -m agentic_patterns.domain_exploration --no-dry-run
+
+  # Custom limits
+  python -m agentic_patterns.domain_exploration --max-files 50 --max-depth 5
+
+  # Only Python files
+  python -m agentic_patterns.domain_exploration --pattern "**/*.py"
+
+  # Save knowledge map
+  python -m agentic_patterns.domain_exploration -o map.json
+""",
+    )
+    parser.add_argument(
+        "path",
+        nargs="?",
+        default=None,
+        help="Target directory to explore (default: project root)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        dest="dry_run",
+        action="store_true",
+        default=True,
+        help="AST only, no LLM calls (default)",
+    )
+    parser.add_argument(
+        "--no-dry-run",
+        dest="dry_run",
+        action="store_false",
+        help="Enable LLM semantic extraction",
+    )
+    parser.add_argument(
+        "--max-files",
+        type=int,
+        default=30,
+        help="Maximum files to process (default: 30)",
+    )
+    parser.add_argument(
+        "--max-depth",
+        type=int,
+        default=4,
+        help="Maximum directory depth (default: 4)",
+    )
+    parser.add_argument(
+        "--pattern",
+        action="append",
+        dest="patterns",
+        metavar="GLOB",
+        help="Include pattern (default: **/*.py **/*.md). Repeatable.",
+    )
+    parser.add_argument(
+        "-o",
+        "--output",
+        metavar="FILE",
+        help="Save knowledge map to JSON file",
+    )
+
+    args = parser.parse_args()
 
     def render_results(km: KnowledgeMap, console: Console) -> None:
         """Render exploration results with rich visualization."""
@@ -1690,26 +1762,27 @@ if __name__ == "__main__":
     async def main() -> None:
         console = Console()
         console.print()
-        console.rule("[bold]DEMO: The Cartographer - Domain Exploration")
+        console.rule("[bold]The Cartographer - Domain Exploration")
         console.print()
 
-        # Determine target path
-        if len(sys.argv) > 1:
-            target = sys.argv[1]
-        else:
-            # Default: explore the entire project (src + docs)
-            target = str(Path(__file__).parent.parent.parent)
+        # Determine target path (default: project root)
+        default_path = str(Path(__file__).parent.parent.parent)
+        target = args.path or default_path
 
+        # Determine patterns
+        patterns = args.patterns or ["**/*.py", "**/*.md"]
+
+        mode = "Dry run (AST only)" if args.dry_run else "Full (AST + LLM)"
         console.print(f"[dim]Exploring: {target}[/dim]")
-        console.print("[dim]Mode: Dry run (AST only, no LLM calls)[/dim]")
+        console.print(f"[dim]Mode: {mode}[/dim]")
         console.print()
 
-        # Configure for demo - include both Python and Markdown
+        # Configure boundary from args
         boundary = ExplorationBoundary(
-            max_depth=4,
-            max_files=30,
-            dry_run=True,  # AST only for fast demo
-            include_patterns=["**/*.py", "**/*.md"],
+            max_depth=args.max_depth,
+            max_files=args.max_files,
+            dry_run=args.dry_run,
+            include_patterns=patterns,
         )
 
         console.print(
@@ -1719,7 +1792,11 @@ if __name__ == "__main__":
         )
 
         # Run exploration
-        km = await explore_domain(root_path=target, boundary=boundary)
+        km = await explore_domain(
+            root_path=target,
+            boundary=boundary,
+            storage_path=args.output,
+        )
 
         # Display results
         render_results(km, console)
@@ -1741,6 +1818,10 @@ if __name__ == "__main__":
         if orphans:
             console.print()
             console.print(f"[dim]Orphan entities: {len(orphans)}[/]")
+
+        if args.output:
+            console.print()
+            console.print(f"[green]Knowledge map saved to: {args.output}[/]")
 
     asyncio.run(main())
 # --8<-- [end:main]
