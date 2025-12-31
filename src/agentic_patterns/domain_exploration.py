@@ -1226,6 +1226,20 @@ class ExtractNode(BaseNode[CartographerState, CartographerDeps, KnowledgeMap]):
         md_extractor = MarkdownExtractor()
         llm_extractor = LLMExtractor(model=ctx.deps.model)
 
+        # Enforce max_files limit before processing
+        current_modules = 0
+        if ctx.state.store:
+            km = ctx.state.store.to_knowledge_map()
+            current_modules = len(
+                [e for e in km.entities if e.entity_type == "module"]
+            )
+        remaining_slots = max(0, boundary.max_files - current_modules)
+        files_to_process = self.files_to_process[:remaining_slots]
+
+        if not files_to_process:
+            logfire.info("Max files already reached, skipping extraction")
+            return MapNode(new_entities=[], new_links=[])
+
         # Token accounting for this batch
         batch_token_usage = TokenUsage()
         batch_llm_calls = 0
@@ -1233,10 +1247,10 @@ class ExtractNode(BaseNode[CartographerState, CartographerDeps, KnowledgeMap]):
 
         with logfire.span(
             "extract_node",
-            file_count=len(self.files_to_process),
+            file_count=len(files_to_process),
             dry_run=boundary.dry_run,
         ):
-            for file_path in self.files_to_process:
+            for file_path in files_to_process:
                 try:
                     content = Path(file_path).read_text(
                         encoding="utf-8", errors="ignore"
