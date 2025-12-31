@@ -56,15 +56,15 @@ See [Getting Started](getting-started.md) for full setup instructions.
 
 ## Patterns Overview
 
-18 implemented patterns, 3 specifications. See [full pattern index](patterns/index.md).
+19 implemented patterns, 2 specifications. See [full pattern index](patterns/index.md).
 
 | Category | Patterns |
 |----------|----------|
 | **Foundation** | [Prompt Chaining](patterns/01-prompt-chaining.md), [Routing](patterns/02-routing.md), [Parallelization](patterns/03-parallelization.md) |
-| **Reasoning** | [Reflection](patterns/04-reflection.md), [Tool Use](patterns/05-tool-use.md), [Planning](patterns/06-planning.md) |
+| **Reasoning** | [Reflection](patterns/04-reflection.md), [Tool Use](patterns/05-tool-use.md), [Planning](patterns/06-planning.md), [Dynamic Planning](patterns/06b-dynamic-planning.md) |
 | **Coordination** | [Multi-Agent](patterns/07-multi-agent.md), [Memory](patterns/08-memory.md), [Learning](patterns/09-learning.md) |
 | **Integration** | [MCP Integration](patterns/10-mcp-integration.md), [Goal Monitoring](patterns/11-goal-monitoring.md), [Exception Recovery](patterns/12-exception-recovery.md) |
-| **Advanced** | [Human-in-Loop](patterns/13-human-in-loop.md), [Guardrails](patterns/18-guardrails.md), [Evaluation](patterns/19-evaluation-monitoring.md), +6 more |
+| **Advanced** | [Human-in-Loop](patterns/13-human-in-loop.md), [Knowledge Retrieval](patterns/14-knowledge-retrieval.md), [Agent Marketplace](patterns/15-agent-marketplace.md), [Resource Optimization](patterns/16-resource-optimization.md), [Thought Candidates](patterns/17a-thought-candidates.md), [Tree of Thoughts](patterns/17b-tree-of-thoughts.md), [Guardrails](patterns/18-guardrails.md), [Evaluation](patterns/19-evaluation-monitoring.md), [Prioritization](patterns/20-prioritization.md) |
 
 ## Reproduce This
 

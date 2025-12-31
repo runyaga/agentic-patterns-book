@@ -165,7 +165,7 @@ class TestAgoraState:
         )
         assert state.bids == []
         assert state.winning_bid is None
-        assert state.bid_timeout_seconds == 5.0
+        assert state.config.bid_timeout_seconds == 5.0
 
 
 # Fixtures for testing
@@ -682,15 +682,9 @@ class TestHighestConfidenceStrategy:
         strategy = HighestConfidenceStrategy()
         rfp_id = uuid4()
         bids = [
-            AgentBid(
-                rfp_id=rfp_id, agent_id="a", confidence=0.7, proposal=""
-            ),
-            AgentBid(
-                rfp_id=rfp_id, agent_id="b", confidence=0.9, proposal=""
-            ),
-            AgentBid(
-                rfp_id=rfp_id, agent_id="c", confidence=0.6, proposal=""
-            ),
+            AgentBid(rfp_id=rfp_id, agent_id="a", confidence=0.7, proposal=""),
+            AgentBid(rfp_id=rfp_id, agent_id="b", confidence=0.9, proposal=""),
+            AgentBid(rfp_id=rfp_id, agent_id="c", confidence=0.6, proposal=""),
         ]
         rfp = TaskRFP(requirement="Test")
 
@@ -723,12 +717,8 @@ class TestBestSkillMatchStrategy:
         strategy = BestSkillMatchStrategy()
         rfp_id = uuid4()
         bids = [
-            AgentBid(
-                rfp_id=rfp_id, agent_id="a", confidence=0.9, proposal=""
-            ),
-            AgentBid(
-                rfp_id=rfp_id, agent_id="b", confidence=0.6, proposal=""
-            ),
+            AgentBid(rfp_id=rfp_id, agent_id="a", confidence=0.9, proposal=""),
+            AgentBid(rfp_id=rfp_id, agent_id="b", confidence=0.6, proposal=""),
         ]
         caps = {
             "a": AgentCapability(
@@ -763,12 +753,8 @@ class TestBestSkillMatchStrategy:
         strategy = BestSkillMatchStrategy()
         rfp_id = uuid4()
         bids = [
-            AgentBid(
-                rfp_id=rfp_id, agent_id="a", confidence=0.7, proposal=""
-            ),
-            AgentBid(
-                rfp_id=rfp_id, agent_id="b", confidence=0.9, proposal=""
-            ),
+            AgentBid(rfp_id=rfp_id, agent_id="a", confidence=0.7, proposal=""),
+            AgentBid(rfp_id=rfp_id, agent_id="b", confidence=0.9, proposal=""),
         ]
         # No required_skills means all skill scores are 0
         rfp = TaskRFP(requirement="Test", required_skills=[])
@@ -800,12 +786,8 @@ class TestWeightedScoreStrategy:
         rfp_id = uuid4()
         # With high skill weight, skill match matters more
         bids = [
-            AgentBid(
-                rfp_id=rfp_id, agent_id="a", confidence=0.9, proposal=""
-            ),
-            AgentBid(
-                rfp_id=rfp_id, agent_id="b", confidence=0.5, proposal=""
-            ),
+            AgentBid(rfp_id=rfp_id, agent_id="a", confidence=0.9, proposal=""),
+            AgentBid(rfp_id=rfp_id, agent_id="b", confidence=0.5, proposal=""),
         ]
         caps = {
             "a": AgentCapability(
@@ -841,12 +823,8 @@ class TestWeightedScoreStrategy:
         strategy = WeightedScoreStrategy()
         rfp_id = uuid4()
         bids = [
-            AgentBid(
-                rfp_id=rfp_id, agent_id="a", confidence=0.7, proposal=""
-            ),
-            AgentBid(
-                rfp_id=rfp_id, agent_id="b", confidence=0.9, proposal=""
-            ),
+            AgentBid(rfp_id=rfp_id, agent_id="a", confidence=0.7, proposal=""),
+            AgentBid(rfp_id=rfp_id, agent_id="b", confidence=0.9, proposal=""),
         ]
         # No required_skills means only confidence matters
         rfp = TaskRFP(requirement="Test", required_skills=[])
@@ -1023,6 +1001,462 @@ class TestStrategyInFullFlow:
                 rfp,
                 [(cap, mock_agent)],
                 strategy=HighestConfidenceStrategy(),
+            )
+
+            assert result.success
+
+
+# ============================================================
+# Milestone 3 Tests: Production Features
+# ============================================================
+
+
+class TestLoadBalancing:
+    """Test load balancing features."""
+
+    def test_available_capacity(self):
+        cap = AgentCapability(
+            agent_id="test",
+            name="Test",
+            skills=["skill_a"],
+            description="Test",
+            max_concurrent=3,
+            current_load=1,
+        )
+        assert cap.available_capacity == 2
+
+    def test_available_capacity_at_max(self):
+        cap = AgentCapability(
+            agent_id="test",
+            name="Test",
+            skills=["skill_a"],
+            description="Test",
+            max_concurrent=2,
+            current_load=2,
+        )
+        assert cap.available_capacity == 0
+
+    def test_available_capacity_over_max(self):
+        cap = AgentCapability(
+            agent_id="test",
+            name="Test",
+            skills=["skill_a"],
+            description="Test",
+            max_concurrent=2,
+            current_load=5,
+        )
+        assert cap.available_capacity == 0  # max(0, -3)
+
+    def test_is_available_true(self):
+        cap = AgentCapability(
+            agent_id="test",
+            name="Test",
+            skills=["skill_a"],
+            description="Test",
+            max_concurrent=3,
+            current_load=2,
+        )
+        assert cap.is_available is True
+
+    def test_is_available_false(self):
+        cap = AgentCapability(
+            agent_id="test",
+            name="Test",
+            skills=["skill_a"],
+            description="Test",
+            max_concurrent=2,
+            current_load=2,
+        )
+        assert cap.is_available is False
+
+    def test_default_max_concurrent(self):
+        cap = AgentCapability(
+            agent_id="test",
+            name="Test",
+            skills=["skill_a"],
+            description="Test",
+        )
+        assert cap.max_concurrent == 3
+        assert cap.current_load == 0
+
+
+class TestAgoraCallbacks:
+    """Test AgoraCallbacks dataclass."""
+
+    def test_default_callbacks_are_none(self):
+        from agentic_patterns.agent_marketplace import AgoraCallbacks
+
+        callbacks = AgoraCallbacks()
+        assert callbacks.on_bid_received is None
+        assert callbacks.on_winner_selected is None
+        assert callbacks.on_task_complete is None
+
+    def test_callbacks_can_be_set(self):
+        from agentic_patterns.agent_marketplace import AgoraCallbacks
+
+        async def dummy_bid(bid: AgentBid) -> None:
+            pass
+
+        callbacks = AgoraCallbacks(on_bid_received=dummy_bid)
+        assert callbacks.on_bid_received is not None
+
+
+class TestAgoraConfig:
+    """Test AgoraConfig dataclass."""
+
+    def test_default_config_values(self):
+        from agentic_patterns.agent_marketplace import AgoraConfig
+
+        config = AgoraConfig()
+        assert config.bid_timeout_seconds == 5.0
+        assert config.execution_timeout_seconds == 30.0
+        assert config.max_retries == 0
+
+    def test_custom_config_values(self):
+        from agentic_patterns.agent_marketplace import AgoraConfig
+
+        config = AgoraConfig(
+            bid_timeout_seconds=10.0,
+            execution_timeout_seconds=60.0,
+            max_retries=2,
+        )
+        assert config.bid_timeout_seconds == 10.0
+        assert config.execution_timeout_seconds == 60.0
+        assert config.max_retries == 2
+
+
+class TestCapacityAwareStrategy:
+    """Test CapacityAwareStrategy."""
+
+    @pytest.mark.asyncio
+    async def test_default_weights(self):
+        from agentic_patterns.agent_marketplace import CapacityAwareStrategy
+
+        strategy = CapacityAwareStrategy()
+        assert strategy.confidence_weight == 0.5
+        assert strategy.skill_weight == 0.3
+        assert strategy.capacity_weight == 0.2
+
+    @pytest.mark.asyncio
+    async def test_prefers_less_loaded_agent(self):
+        from agentic_patterns.agent_marketplace import CapacityAwareStrategy
+
+        strategy = CapacityAwareStrategy(
+            confidence_weight=0.0,
+            skill_weight=0.0,
+            capacity_weight=1.0,  # Only consider capacity
+        )
+        rfp_id = uuid4()
+        bids = [
+            AgentBid(
+                rfp_id=rfp_id, agent_id="busy", confidence=0.9, proposal=""
+            ),
+            AgentBid(
+                rfp_id=rfp_id, agent_id="free", confidence=0.5, proposal=""
+            ),
+        ]
+        caps = {
+            "busy": AgentCapability(
+                agent_id="busy",
+                name="Busy",
+                skills=["skill_a"],
+                description="",
+                max_concurrent=3,
+                current_load=2,  # 1/3 capacity
+            ),
+            "free": AgentCapability(
+                agent_id="free",
+                name="Free",
+                skills=["skill_a"],
+                description="",
+                max_concurrent=3,
+                current_load=0,  # 3/3 capacity
+            ),
+        }
+        rfp = TaskRFP(requirement="Test")
+
+        winner = await strategy.select(bids, rfp, caps)
+
+        assert winner is not None
+        assert winner.agent_id == "free"  # More capacity
+
+    @pytest.mark.asyncio
+    async def test_returns_none_for_empty_bids(self):
+        from agentic_patterns.agent_marketplace import CapacityAwareStrategy
+
+        strategy = CapacityAwareStrategy()
+        rfp = TaskRFP(requirement="Test")
+
+        winner = await strategy.select([], rfp, {})
+
+        assert winner is None
+
+    @pytest.mark.asyncio
+    async def test_combined_scoring(self):
+        from agentic_patterns.agent_marketplace import CapacityAwareStrategy
+
+        # Equal weights for all factors
+        strategy = CapacityAwareStrategy(
+            confidence_weight=0.33,
+            skill_weight=0.33,
+            capacity_weight=0.34,
+        )
+        rfp_id = uuid4()
+        bids = [
+            AgentBid(rfp_id=rfp_id, agent_id="a", confidence=0.8, proposal=""),
+            AgentBid(rfp_id=rfp_id, agent_id="b", confidence=0.6, proposal=""),
+        ]
+        caps = {
+            "a": AgentCapability(
+                agent_id="a",
+                name="A",
+                skills=["other"],
+                description="",
+                max_concurrent=3,
+                current_load=2,
+            ),
+            "b": AgentCapability(
+                agent_id="b",
+                name="B",
+                skills=["skill_a"],
+                description="",
+                max_concurrent=3,
+                current_load=0,
+            ),
+        }
+        rfp = TaskRFP(requirement="Test", required_skills=["skill_a"])
+
+        winner = await strategy.select(bids, rfp, caps)
+
+        # b has better skill match and capacity, should win
+        assert winner is not None
+        assert winner.agent_id == "b"
+
+
+class TestCapacityAwareStrategyProtocol:
+    """Test CapacityAwareStrategy protocol compliance."""
+
+    def test_is_selection_strategy(self):
+        from agentic_patterns.agent_marketplace import CapacityAwareStrategy
+        from agentic_patterns.agent_marketplace import SelectionStrategy
+
+        strategy = CapacityAwareStrategy()
+        assert isinstance(strategy, SelectionStrategy)
+
+
+class TestCallbackIntegration:
+    """Test callback integration in the flow."""
+
+    @pytest.mark.asyncio
+    async def test_on_bid_received_called(self):
+        from agentic_patterns.agent_marketplace import AgoraCallbacks
+        from agentic_patterns.agent_marketplace import AgoraState
+        from agentic_patterns.agent_marketplace import CollectBidsNode
+
+        received_bids: list[AgentBid] = []
+
+        async def capture_bid(bid: AgentBid) -> None:
+            received_bids.append(bid)
+
+        rfp = TaskRFP(requirement="Test", required_skills=["skill_a"])
+        cap = AgentCapability(
+            agent_id="agent_a",
+            name="Agent A",
+            skills=["skill_a"],
+            description="Test",
+        )
+
+        mock_agent = MagicMock()
+        mock_result = MagicMock()
+        mock_result.output = BidResponse(
+            will_bid=True,
+            confidence=0.9,
+            proposal="Will do",
+            reasoning="Match",
+        )
+        mock_agent.run = AsyncMock(return_value=mock_result)
+
+        state = AgoraState(
+            rfp=rfp,
+            registered_bidders=[cap],
+            bidder_agents={"agent_a": mock_agent},
+            callbacks=AgoraCallbacks(on_bid_received=capture_bid),
+        )
+        ctx = MagicMock()
+        ctx.state = state
+
+        node = CollectBidsNode()
+        await node.run(ctx)
+
+        assert len(received_bids) == 1
+        assert received_bids[0].agent_id == "agent_a"
+
+    @pytest.mark.asyncio
+    async def test_on_winner_selected_called(self):
+        from agentic_patterns.agent_marketplace import AgoraCallbacks
+        from agentic_patterns.agent_marketplace import AgoraState
+        from agentic_patterns.agent_marketplace import SelectWinnerNode
+
+        winner_info: list[tuple[AgentBid, list[AgentBid]]] = []
+
+        async def capture_winner(
+            winner: AgentBid, all_bids: list[AgentBid]
+        ) -> None:
+            winner_info.append((winner, all_bids))
+
+        rfp = TaskRFP(requirement="Test", required_skills=["skill_a"])
+        cap = AgentCapability(
+            agent_id="agent_a",
+            name="Agent A",
+            skills=["skill_a"],
+            description="Test",
+        )
+        bid = AgentBid(
+            rfp_id=rfp.id,
+            agent_id="agent_a",
+            confidence=0.9,
+            proposal="Will do",
+        )
+
+        state = AgoraState(
+            rfp=rfp,
+            registered_bidders=[cap],
+            bidder_agents={},
+            callbacks=AgoraCallbacks(on_winner_selected=capture_winner),
+            bids=[bid],
+        )
+        ctx = MagicMock()
+        ctx.state = state
+
+        node = SelectWinnerNode()
+        await node.run(ctx)
+
+        assert len(winner_info) == 1
+        assert winner_info[0][0].agent_id == "agent_a"
+        assert len(winner_info[0][1]) == 1
+
+    @pytest.mark.asyncio
+    async def test_skips_agent_at_capacity(self):
+        from agentic_patterns.agent_marketplace import AgoraState
+        from agentic_patterns.agent_marketplace import CollectBidsNode
+
+        rfp = TaskRFP(requirement="Test")
+        cap_busy = AgentCapability(
+            agent_id="busy",
+            name="Busy Agent",
+            skills=["skill_a"],
+            description="Test",
+            max_concurrent=2,
+            current_load=2,  # At capacity
+        )
+        cap_free = AgentCapability(
+            agent_id="free",
+            name="Free Agent",
+            skills=["skill_a"],
+            description="Test",
+            max_concurrent=2,
+            current_load=0,  # Has capacity
+        )
+
+        mock_agent = MagicMock()
+        mock_result = MagicMock()
+        mock_result.output = BidResponse(
+            will_bid=True,
+            confidence=0.9,
+            proposal="Will do",
+            reasoning="Match",
+        )
+        mock_agent.run = AsyncMock(return_value=mock_result)
+
+        state = AgoraState(
+            rfp=rfp,
+            registered_bidders=[cap_busy, cap_free],
+            bidder_agents={
+                "busy": mock_agent,
+                "free": mock_agent,
+            },
+        )
+        ctx = MagicMock()
+        ctx.state = state
+
+        node = CollectBidsNode()
+        await node.run(ctx)
+
+        # Only free agent should have bid
+        assert len(state.bids) == 1
+        assert state.bids[0].agent_id == "free"
+
+
+class TestMarketplaceWithCallbacksAndConfig:
+    """Test full marketplace with M3 features."""
+
+    @pytest.mark.asyncio
+    async def test_run_with_callbacks_and_config(self):
+        from agentic_patterns.agent_marketplace import AgoraCallbacks
+        from agentic_patterns.agent_marketplace import AgoraConfig
+
+        rfp = TaskRFP(requirement="Test task")
+        cap = AgentCapability(
+            agent_id="test",
+            name="Test",
+            skills=["skill_a"],
+            description="Test agent",
+        )
+
+        bid_response = BidResponse(
+            will_bid=True,
+            confidence=0.9,
+            proposal="Will do",
+            reasoning="Skills match",
+        )
+
+        mock_agent = MagicMock()
+        mock_bid_result = MagicMock()
+        mock_bid_result.output = bid_response
+        mock_exec_result = MagicMock()
+        mock_exec_result.output = "Done!"
+
+        mock_agent.run = AsyncMock(
+            side_effect=[mock_bid_result, mock_exec_result]
+        )
+
+        events: list[str] = []
+
+        async def log_bid(bid: AgentBid) -> None:
+            events.append(f"bid:{bid.agent_id}")
+
+        async def log_winner(
+            winner: AgentBid, all_bids: list[AgentBid]
+        ) -> None:
+            events.append(f"winner:{winner.agent_id}")
+
+        async def log_complete(result: TaskResult) -> None:
+            events.append(f"complete:{result.success}")
+
+        with patch(
+            "agentic_patterns.agent_marketplace.agora_graph"
+        ) as mock_graph:
+            mock_graph_result = MagicMock()
+            mock_graph_result.output = TaskResult(
+                rfp_id=rfp.id,
+                agent_id="test",
+                success=True,
+                output="Done!",
+            )
+            mock_graph.run = AsyncMock(return_value=mock_graph_result)
+
+            result = await run_marketplace_task(
+                rfp,
+                [(cap, mock_agent)],
+                callbacks=AgoraCallbacks(
+                    on_bid_received=log_bid,
+                    on_winner_selected=log_winner,
+                    on_task_complete=log_complete,
+                ),
+                config=AgoraConfig(
+                    bid_timeout_seconds=10.0,
+                    execution_timeout_seconds=60.0,
+                ),
             )
 
             assert result.success

@@ -46,7 +46,7 @@ See [Idioms](../idioms.md) for pydantic-ai, pydantic_graph, and pydantic-evals p
 |----|---------|-------------|--------|
 | 13 | [Human-in-the-Loop](13-human-in-loop.md) | Integrate human oversight | ✅ |
 | 14 | [Knowledge Retrieval](14-knowledge-retrieval.md) | RAG pattern | ✅ |
-| 15 | [Agent Marketplace](15-agent-marketplace.md) | Decentralized bidding | 📋 Spec |
+| 15 | [Agent Marketplace](15-agent-marketplace.md) | Decentralized bidding | ✅ |
 | 16 | [Resource Optimization](16-resource-optimization.md) | Cost/latency routing | ✅ |
 | 17a | [Thought Candidates](17a-thought-candidates.md) | Best-of-N sampling | ✅ |
 | 17b | [Tree of Thoughts](17b-tree-of-thoughts.md) | Multi-level exploration | ✅ |

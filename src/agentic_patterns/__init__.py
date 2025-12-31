@@ -8,7 +8,10 @@ from agentic_patterns._models import get_model
 from agentic_patterns.agent_marketplace import AgentBid
 from agentic_patterns.agent_marketplace import AgentCapability
 from agentic_patterns.agent_marketplace import AgentJudgmentStrategy
+from agentic_patterns.agent_marketplace import AgoraCallbacks
+from agentic_patterns.agent_marketplace import AgoraConfig
 from agentic_patterns.agent_marketplace import BestSkillMatchStrategy
+from agentic_patterns.agent_marketplace import CapacityAwareStrategy
 from agentic_patterns.agent_marketplace import HighestConfidenceStrategy
 from agentic_patterns.agent_marketplace import SelectionStrategy
 from agentic_patterns.agent_marketplace import TaskResult
@@ -44,6 +47,10 @@ __all__ = [
     "BestSkillMatchStrategy",
     "WeightedScoreStrategy",
     "AgentJudgmentStrategy",
+    "CapacityAwareStrategy",
+    # Production Features (Ch 15c)
+    "AgoraCallbacks",
+    "AgoraConfig",
     # Exception Recovery (Ch 12)
     "recoverable_run",
     "RecoveryConfig",

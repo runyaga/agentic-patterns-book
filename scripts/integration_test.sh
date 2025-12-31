@@ -49,7 +49,7 @@ while [[ $# -gt 0 ]]; do
             echo "  human_in_loop, knowledge_retrieval, resource_aware,"
             echo "  guardrails, evaluation, prioritization, exception_recovery,"
             echo "  mcp_integration, goal_monitoring, thought_candidates,"
-            echo "  tree_of_thoughts"
+            echo "  tree_of_thoughts, agent_marketplace, dynamic_planning"
             exit 0
             ;;
         *)
@@ -66,6 +66,7 @@ ALL_PATTERNS=(
     reflection
     tool_use
     planning
+    dynamic_planning
     multi_agent
     memory
     learning
@@ -80,6 +81,7 @@ ALL_PATTERNS=(
     goal_monitoring
     thought_candidates
     tree_of_thoughts
+    agent_marketplace
 )
 
 # If single pattern specified, validate and use it
