@@ -1,6 +1,35 @@
+"""
+Domain Exploration Pattern (The Cartographer).
+
+Based on the Agentic Design Patterns book Chapter 21:
+Autonomous discovery agent that crawls codebases and builds semantic maps.
+
+Key capabilities:
+- Structural Truth: AST-based extraction (zero-token) for code hierarchy
+- Semantic Insight: LLM-based summarization of purpose and intent
+- Stable Identity: Scoped IDs (e.g. `pkg.mod.Class`) to survive refactors
+- Token Safety: "Dry Run" mode to preview crawl scope before LLM calls
+- Persistence: Atomic JSON serialization with resumable frontier state
+
+Flow diagram:
+
+```mermaid
+--8<-- [start:diagram]
+stateDiagram-v2
+    [*] --> ExploreNode: Initial path
+    ExploreNode --> ExtractNode: Files to process
+    ExtractNode --> MapNode: Entities found
+    MapNode --> ExploreNode: More to explore
+    MapNode --> CompleteNode: Boundary reached
+    CompleteNode --> [*]: KnowledgeMap (JSON)
+--8<-- [end:diagram]
+```
+"""
+
 from __future__ import annotations
 
 import ast
+import fnmatch
 import hashlib
 from dataclasses import dataclass
 from dataclasses import field
@@ -9,11 +38,13 @@ from pathlib import Path
 from typing import Any
 from typing import Literal
 
+import logfire
 import networkx as nx
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic_ai import Agent
 from pydantic_ai import RunContext
+from pydantic_ai.models import Model
 from pydantic_graph import BaseNode
 from pydantic_graph import End
 from pydantic_graph import Graph
@@ -111,6 +142,21 @@ def generate_entity_id(entity_type: str, scope: str, name: str) -> str:
     """
     content = f"{entity_type}:{scope}:{name}"
     return hashlib.sha256(content.encode()).hexdigest()[:16]
+
+
+def _is_match(path: Path, pattern: str) -> bool:
+    """
+    Check if a path matches a glob pattern.
+
+    Handles both standard glob matching and recursive patterns like '**/*.py'.
+    """
+    path_str = str(path)
+    if path.match(pattern) or fnmatch.fnmatch(path_str, pattern):
+        return True
+    # Try matching without recursive prefix for root files
+    if pattern.startswith("**/"):
+        return fnmatch.fnmatch(path_str, pattern[3:])
+    return False
 
 
 # --8<-- [end:models]
@@ -336,32 +382,65 @@ class ASTExtractor:
 
 # --- LLM Extraction ---
 
-extractor_agent = Agent(
-    get_model(),
-    system_prompt=(
-        "You are a code analysis expert. "
-        "Extract semantic concepts from source code.\n"
-        "Analyze the provided code and identify high-level 'concepts'.\n"
-        "Return a list of NEW entities found, or updates to existing ones."
-    ),
-    deps_type=ExtractionDeps,
-    output_type=ExtractionResult,
+EXTRACTOR_SYSTEM_PROMPT = (
+    "You are a code analysis expert. "
+    "Extract semantic concepts from source code.\n"
+    "Analyze the provided code and identify high-level 'concepts'.\n"
+    "Return a list of NEW entities found, or updates to existing ones."
 )
 
 
-@extractor_agent.system_prompt
-def inject_file_context(ctx: RunContext[ExtractionDeps]) -> str:
+def _extractor_context_prompt(ctx: RunContext[ExtractionDeps]) -> str:
+    """Inject file context into the prompt."""
     return (
         f"\nAnalyzing file: {ctx.deps.file_path}\n"
         f"Content snippet:\n{ctx.deps.content[:4000]}"
     )
 
 
+def create_extractor_agent(
+    model: Model | None = None,
+) -> Agent[ExtractionDeps, ExtractionResult]:
+    """
+    Create an extractor agent with optional model override.
+
+    Args:
+        model: pydantic-ai Model instance. If None, uses default.
+
+    Returns:
+        Configured extractor agent.
+    """
+    agent: Agent[ExtractionDeps, ExtractionResult] = Agent(
+        model or get_model(),
+        system_prompt=EXTRACTOR_SYSTEM_PROMPT,
+        deps_type=ExtractionDeps,
+        output_type=ExtractionResult,
+    )
+    agent.system_prompt(_extractor_context_prompt)
+    return agent
+
+
+# Default agent for backward compatibility
+extractor_agent = create_extractor_agent()
+
+
 class LLMExtractor:
     """Wraps the pydantic-ai Agent to provide semantic extraction."""
 
+    def __init__(self, model: Model | None = None) -> None:
+        """
+        Initialize the LLM extractor.
+
+        Args:
+            model: Optional model override. If None, uses default.
+        """
+        self._agent = (
+            create_extractor_agent(model) if model else extractor_agent
+        )
+
     async def extract(self, file_path: str, content: str) -> ExtractionResult:
-        result = await extractor_agent.run(
+        """Extract semantic entities from file content."""
+        result = await self._agent.run(
             "Extract semantic entities and relationships.",
             deps=ExtractionDeps(file_path=file_path, content=content),
         )
@@ -390,6 +469,7 @@ class CartographerDeps:
 
     boundary: ExplorationBoundary = field(default_factory=ExplorationBoundary)
     storage_path: str | None = None
+    model: Model | None = None
 
 
 @dataclass
@@ -403,83 +483,88 @@ class ExploreNode(BaseNode[CartographerState, CartographerDeps, KnowledgeMap]):
         frontier = ctx.state.frontier
         boundary = ctx.deps.boundary
 
-        if not frontier.pending:
-            return CompleteNode()
+        with logfire.span(
+            "explore_node",
+            pending_count=len(frontier.pending),
+            explored_count=len(frontier.explored),
+        ):
+            if not frontier.pending:
+                logfire.info("No pending paths, completing")
+                return CompleteNode()
 
-        batch_size = 5
-        to_explore = frontier.pending[:batch_size]
-        frontier.pending = frontier.pending[batch_size:]
+            batch_size = 5
+            to_explore = frontier.pending[:batch_size]
+            frontier.pending = frontier.pending[batch_size:]
 
-        discovered_files: list[str] = []
+            discovered_files: list[str] = []
 
-        for path in to_explore:
-            if path in frontier.explored:
-                continue
+            # Get root path for relative matching (with null check)
+            root_path = "."
+            if ctx.state.store is not None:
+                root_path = ctx.state.store.root_path
 
-            depth = frontier.depth_map.get(path, 0)
-            if depth > boundary.max_depth:
-                continue
+            for path in to_explore:
+                if path in frontier.explored:
+                    continue
 
-            frontier.explored.add(path)
-            p = Path(path)
-            if not p.exists():
-                continue
+                depth = frontier.depth_map.get(path, 0)
+                if depth > boundary.max_depth:
+                    continue
 
-            if p.is_dir():
-                try:
-                    for child in p.iterdir():
-                        child_str = str(child)
-                        # Compute relative path for matching
-                        try:
-                            rel_path = child.relative_to(
-                                Path(ctx.state.store.root_path).resolve()
-                            )
-                        except ValueError:
-                            rel_path = child
+                frontier.explored.add(path)
+                p = Path(path)
+                if not p.exists():
+                    continue
 
-                        import fnmatch
+                if p.is_dir():
+                    try:
+                        for child in p.iterdir():
+                            child_str = str(child)
+                            # Compute relative path for matching
+                            try:
+                                rel_path = child.relative_to(
+                                    Path(root_path).resolve()
+                                )
+                            except ValueError:
+                                rel_path = child
 
-                        def _is_match(p: Path, pat: str) -> bool:
-                            # Try standard match
-                            if p.match(pat) or fnmatch.fnmatch(str(p), pat):
-                                return True
-                            # Try matching without recursive prefix
-                            # for root files
-                            if pat.startswith("**/"):
-                                return fnmatch.fnmatch(str(p), pat[3:])
-                            return False
-
-                        # Filter child before adding
-                        exclude = any(
-                            _is_match(rel_path, pattern)
-                            for pattern in boundary.exclude_patterns
-                        )
-                        if exclude:
-                            continue
-
-                        if child.is_dir():
-                            if child_str not in frontier.explored:
-                                frontier.pending.append(child_str)
-                                frontier.depth_map[child_str] = depth + 1
-                        elif child.is_file():
-                            include = any(
+                            # Filter child before adding
+                            exclude = any(
                                 _is_match(rel_path, pattern)
-                                for pattern in boundary.include_patterns
+                                for pattern in boundary.exclude_patterns
                             )
-                            if include:
-                                discovered_files.append(child_str)
-                except PermissionError:
-                    pass
-            elif p.is_file():
-                discovered_files.append(path)
+                            if exclude:
+                                continue
 
-        if not discovered_files and not frontier.pending:
-            return CompleteNode()
+                            if child.is_dir():
+                                if child_str not in frontier.explored:
+                                    frontier.pending.append(child_str)
+                                    frontier.depth_map[child_str] = depth + 1
+                            elif child.is_file():
+                                include = any(
+                                    _is_match(rel_path, pattern)
+                                    for pattern in boundary.include_patterns
+                                )
+                                if include:
+                                    discovered_files.append(child_str)
+                    except PermissionError:
+                        logfire.warn("Permission denied", path=path)
+                elif p.is_file():
+                    discovered_files.append(path)
 
-        if not discovered_files:
-            return ExploreNode()
+            logfire.info(
+                "Exploration batch complete",
+                discovered_files=len(discovered_files),
+                pending_remaining=len(frontier.pending),
+            )
 
-        return ExtractNode(files_to_process=discovered_files)
+            if not discovered_files and not frontier.pending:
+                return CompleteNode()
+
+            if not discovered_files:
+                return ExploreNode()
+
+            return ExtractNode(files_to_process=discovered_files)
 
 
 @dataclass
@@ -496,29 +581,48 @@ class ExtractNode(BaseNode[CartographerState, CartographerDeps, KnowledgeMap]):
         extracted_entities: list[SemanticEntity] = []
         extracted_links: list[SemanticLink] = []
         ast_extractor = ASTExtractor()
-        llm_extractor = LLMExtractor()
+        llm_extractor = LLMExtractor(model=ctx.deps.model)
 
-        for file_path in self.files_to_process:
-            try:
-                content = Path(file_path).read_text(
-                    encoding="utf-8", errors="ignore"
-                )
-            except Exception:
-                continue
-
-            ast_result = ast_extractor.extract(file_path, content)
-            extracted_entities.extend(ast_result.entities)
-            extracted_links.extend(ast_result.links)
-
-            if not boundary.dry_run:
+        with logfire.span(
+            "extract_node",
+            file_count=len(self.files_to_process),
+            dry_run=boundary.dry_run,
+        ):
+            for file_path in self.files_to_process:
                 try:
-                    llm_result = await llm_extractor.extract(
-                        file_path, content
+                    content = Path(file_path).read_text(
+                        encoding="utf-8", errors="ignore"
                     )
-                    extracted_entities.extend(llm_result.entities)
-                    extracted_links.extend(llm_result.links)
-                except Exception:
-                    pass
+                except Exception as e:
+                    logfire.warn(
+                        "Failed to read file", path=file_path, error=str(e)
+                    )
+                    continue
+
+                ast_result = ast_extractor.extract(file_path, content)
+                extracted_entities.extend(ast_result.entities)
+                extracted_links.extend(ast_result.links)
+
+                if not boundary.dry_run:
+                    try:
+                        llm_result = await llm_extractor.extract(
+                            file_path, content
+                        )
+                        extracted_entities.extend(llm_result.entities)
+                        extracted_links.extend(llm_result.links)
+                    except Exception as e:
+                        logfire.warn(
+                            "LLM extraction failed",
+                            path=file_path,
+                            error=str(e),
+                        )
+
+            logfire.info(
+                "Extraction complete",
+                entities_found=len(extracted_entities),
+                links_found=len(extracted_links),
+            )
+
         return MapNode(
             new_entities=extracted_entities, new_links=extracted_links
         )
@@ -535,27 +639,38 @@ class MapNode(BaseNode[CartographerState, CartographerDeps, KnowledgeMap]):
         self,
         ctx: GraphRunContext[CartographerState, CartographerDeps],
     ) -> ExploreNode | CompleteNode:
-        if ctx.state.store is None:
-            ctx.state.store = KnowledgeStore()
-        store = ctx.state.store
+        with logfire.span(
+            "map_node",
+            new_entities=len(self.new_entities),
+            new_links=len(self.new_links),
+        ):
+            if ctx.state.store is None:
+                ctx.state.store = KnowledgeStore()
+            store = ctx.state.store
 
-        for entity in self.new_entities:
-            store.add_entity(entity)
-        for link in self.new_links:
-            store.add_link(link)
+            for entity in self.new_entities:
+                store.add_entity(entity)
+            for link in self.new_links:
+                store.add_link(link)
 
-        store.frontier_state = ctx.state.frontier
-        modules = [
-            e
-            for e in store.to_knowledge_map().entities
-            if e.entity_type == "module"
-        ]
-        if len(modules) >= ctx.deps.boundary.max_files:
+            store.frontier_state = ctx.state.frontier
+            km = store.to_knowledge_map()
+            modules = [e for e in km.entities if e.entity_type == "module"]
+
+            logfire.info(
+                "Graph updated",
+                total_entities=len(km.entities),
+                total_links=len(km.links),
+                modules_found=len(modules),
+            )
+
+            if len(modules) >= ctx.deps.boundary.max_files:
+                logfire.info("Max files reached, completing")
+                return CompleteNode()
+
+            if ctx.state.frontier.pending:
+                return ExploreNode()
             return CompleteNode()
-
-        if ctx.state.frontier.pending:
-            return ExploreNode()
-        return CompleteNode()
 
 
 @dataclass
@@ -568,13 +683,25 @@ class CompleteNode(
         self,
         ctx: GraphRunContext[CartographerState, CartographerDeps],
     ) -> End[KnowledgeMap]:
-        if ctx.state.store is None:
-            ctx.state.store = KnowledgeStore()
-        store = ctx.state.store
-        store.frontier_state = ctx.state.frontier
-        if ctx.deps.storage_path:
-            store.save(ctx.deps.storage_path)
-        return End(store.to_knowledge_map())
+        with logfire.span("complete_node"):
+            if ctx.state.store is None:
+                ctx.state.store = KnowledgeStore()
+            store = ctx.state.store
+            store.frontier_state = ctx.state.frontier
+
+            km = store.to_knowledge_map()
+            logfire.info(
+                "Exploration complete",
+                total_entities=len(km.entities),
+                total_links=len(km.links),
+                explored_paths=len(ctx.state.frontier.explored),
+            )
+
+            if ctx.deps.storage_path:
+                store.save(ctx.deps.storage_path)
+                logfire.info("Knowledge map saved", path=ctx.deps.storage_path)
+
+            return End(km)
 
 
 # --8<-- [end:graph]
@@ -588,25 +715,220 @@ async def explore_domain(
     root_path: str,
     boundary: ExplorationBoundary | None = None,
     storage_path: str | None = None,
+    *,
+    model: Model | None = None,
 ) -> KnowledgeMap:
+    """
+    Explore a domain and build a knowledge map.
+
+    Args:
+        root_path: The root directory to explore.
+        boundary: Exploration boundaries (depth, file limits, patterns).
+        storage_path: Path to save/resume the knowledge map.
+        model: Optional pydantic-ai Model for LLM extraction.
+            If None, uses default model.
+
+    Returns:
+        KnowledgeMap containing discovered entities and relationships.
+    """
     if boundary is None:
         boundary = ExplorationBoundary()
-    deps = CartographerDeps(boundary=boundary, storage_path=storage_path)
-    abs_root = str(Path(root_path).resolve())
-    frontier = ExplorationFrontier(pending=[abs_root], depth_map={abs_root: 0})
-    store = KnowledgeStore()
-    store.root_path = root_path
-    if storage_path and Path(storage_path).exists():
-        try:
-            store = KnowledgeStore.load(storage_path)
-            if store.frontier_state:
-                frontier = store.frontier_state
-        except Exception:
-            pass
-    state = CartographerState(frontier=frontier, store=store)
-    graph = Graph(nodes=[ExploreNode, ExtractNode, MapNode, CompleteNode])
-    result = await graph.run(ExploreNode(), state=state, deps=deps)
-    return result.output
+
+    with logfire.span(
+        "explore_domain",
+        root_path=root_path,
+        max_depth=boundary.max_depth,
+        max_files=boundary.max_files,
+        dry_run=boundary.dry_run,
+    ):
+        deps = CartographerDeps(
+            boundary=boundary, storage_path=storage_path, model=model
+        )
+        abs_root = str(Path(root_path).resolve())
+        frontier = ExplorationFrontier(
+            pending=[abs_root], depth_map={abs_root: 0}
+        )
+        store = KnowledgeStore()
+        store.root_path = root_path
+
+        if storage_path and Path(storage_path).exists():
+            try:
+                store = KnowledgeStore.load(storage_path)
+                if store.frontier_state:
+                    frontier = store.frontier_state
+                    logfire.info(
+                        "Resumed from existing map",
+                        explored=len(frontier.explored),
+                        pending=len(frontier.pending),
+                    )
+            except Exception as e:
+                logfire.warn("Failed to load existing map", error=str(e))
+
+        state = CartographerState(frontier=frontier, store=store)
+        graph = Graph(nodes=[ExploreNode, ExtractNode, MapNode, CompleteNode])
+        result = await graph.run(ExploreNode(), state=state, deps=deps)
+        return result.output
 
 
 # --8<-- [end:entry]
+
+
+# --8<-- [start:main]
+if __name__ == "__main__":
+    import asyncio
+    import sys
+
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.tree import Tree
+
+    def render_results(km: KnowledgeMap, console: Console) -> None:
+        """Render exploration results with rich visualization."""
+        console.print()
+        console.rule("[bold blue]Domain Exploration Results")
+        console.print()
+
+        # Summary panel
+        console.print(
+            Panel(
+                f"[bold]Root:[/bold] {km.root_path}\n"
+                f"[bold]Entities:[/bold] {len(km.entities)}\n"
+                f"[bold]Links:[/bold] {len(km.links)}\n"
+                f"[bold]Updated:[/bold] {km.last_updated.isoformat()}",
+                title="Knowledge Map",
+                border_style="blue",
+            )
+        )
+
+        # Entity breakdown by type
+        type_counts: dict[str, int] = {}
+        for e in km.entities:
+            type_counts[e.entity_type] = type_counts.get(e.entity_type, 0) + 1
+
+        type_table = Table(
+            title="[bold]Entity Types[/bold]",
+            show_header=True,
+            header_style="bold cyan",
+        )
+        type_table.add_column("Type", width=15)
+        type_table.add_column("Count", width=10, justify="right")
+
+        for etype, count in sorted(
+            type_counts.items(), key=lambda x: x[1], reverse=True
+        ):
+            type_table.add_row(etype, str(count))
+
+        console.print(type_table)
+        console.print()
+
+        # Build tree visualization by location
+        tree = Tree(
+            f"[bold cyan]{km.root_path}[/]",
+            guide_style="dim",
+        )
+
+        # Group entities by location
+        by_location: dict[str, list[SemanticEntity]] = {}
+        for e in km.entities:
+            loc = e.location
+            if loc not in by_location:
+                by_location[loc] = []
+            by_location[loc].append(e)
+
+        for loc in sorted(by_location.keys())[:10]:  # Limit display
+            entities = by_location[loc]
+            loc_branch = tree.add(f"[dim]{Path(loc).name}[/]")
+            for e in entities[:5]:  # Limit per file
+                icon = {
+                    "module": "[blue]M[/]",
+                    "class": "[green]C[/]",
+                    "function": "[yellow]F[/]",
+                    "concept": "[magenta]~[/]",
+                }.get(e.entity_type, "[dim]?[/]")
+                loc_branch.add(f"{icon} {e.name}")
+            if len(entities) > 5:
+                loc_branch.add(f"[dim]... +{len(entities) - 5} more[/]")
+
+        if len(by_location) > 10:
+            tree.add(f"[dim]... +{len(by_location) - 10} more files[/]")
+
+        console.print(tree)
+        console.print()
+
+        # Link statistics
+        link_types: dict[str, int] = {}
+        for link in km.links:
+            link_types[link.relationship] = (
+                link_types.get(link.relationship, 0) + 1
+            )
+
+        if link_types:
+            link_table = Table(
+                title="[bold]Relationships[/bold]",
+                show_header=True,
+                header_style="bold magenta",
+            )
+            link_table.add_column("Type", width=15)
+            link_table.add_column("Count", width=10, justify="right")
+
+            for ltype, count in sorted(
+                link_types.items(), key=lambda x: x[1], reverse=True
+            ):
+                link_table.add_row(ltype, str(count))
+
+            console.print(link_table)
+
+    async def main() -> None:
+        console = Console()
+        console.print()
+        console.rule("[bold]DEMO: The Cartographer - Domain Exploration")
+        console.print()
+
+        # Determine target path
+        if len(sys.argv) > 1:
+            target = sys.argv[1]
+        else:
+            # Default: explore the agentic_patterns source
+            target = str(Path(__file__).parent)
+
+        console.print(f"[dim]Exploring: {target}[/dim]")
+        console.print("[dim]Mode: Dry run (AST only, no LLM calls)[/dim]")
+        console.print()
+
+        # Configure for demo
+        boundary = ExplorationBoundary(
+            max_depth=3,
+            max_files=15,
+            dry_run=True,  # AST only for fast demo
+            include_patterns=["**/*.py"],
+        )
+
+        console.print(
+            f"[dim]Config: depth={boundary.max_depth}, "
+            f"max_files={boundary.max_files}[/dim]\n"
+        )
+
+        # Run exploration
+        km = await explore_domain(root_path=target, boundary=boundary)
+
+        # Display results
+        render_results(km, console)
+
+        # Graph analysis
+        store = KnowledgeStore(km)
+        central = store.find_central_entities(5)
+        orphans = store.find_orphans()
+
+        if central:
+            console.print()
+            console.print("[bold]Most Connected Entities:[/bold]")
+            for e in central:
+                console.print(f"  [green]{e.name}[/] ({e.entity_type})")
+
+        if orphans:
+            console.print()
+            console.print(f"[dim]Orphan entities: {len(orphans)}[/]")
+
+    asyncio.run(main())
+# --8<-- [end:main]
