@@ -223,7 +223,7 @@ If the answer is "no" to all, the pattern may already be idiomatic.
 | 12 | Phoenix Protocol (Exception Handling) | DONE | ✅ Uses `recoverable_run` wrapper |
 | 15 | Agora (Inter-Agent Comm) | pending | TBD |
 | 17 | Cognitive Weaver (Reasoning) | pending | TBD |
-| 21 | Cartographer (Exploration) | pending | TBD |
+| 21 | Cartographer (Exploration) | completed | 2025-12-30 |
 
 ### 4.2 Pattern Assessments
 

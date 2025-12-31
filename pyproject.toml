@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-ai>=0.1.0",
     "logfire>=3.0",
     "rich>=13.0",
+    "networkx>=3.0",
 ]
 
 [project.optional-dependencies]

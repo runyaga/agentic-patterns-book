@@ -77,7 +77,7 @@ uv venv && uv pip install -e ".[dev]" --python .venv/bin/python
 | [Guardrails](src/agentic_patterns/guardrails.py) | 18 | Input/output validation and safety |
 | [Evaluation](src/agentic_patterns/evaluation.py) | 19 | Performance metrics and monitoring |
 | [Prioritization](src/agentic_patterns/prioritization.py) | 20 | Task ranking and priority queues |
-| [Domain Exploration](docs/patterns/21-domain-exploration.md) | 21 | (Spec) The Cartographer: Knowledge graph mapping |
+| [Domain Exploration](docs/patterns/21-domain-exploration.md) | 21 | The Cartographer: Knowledge graph mapping |
 
 ## Development
 
