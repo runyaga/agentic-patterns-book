@@ -1208,6 +1208,11 @@ class ExploreNode(BaseNode[CartographerState, CartographerDeps, KnowledgeMap]):
 
             return ExtractNode(files_to_process=discovered_files)
 
+        # Fallback: all paths in batch were skipped (explored/depth/missing)
+        if frontier.pending:
+            return ExploreNode()
+        return CompleteNode()
+
 
 @dataclass
 class ExtractNode(BaseNode[CartographerState, CartographerDeps, KnowledgeMap]):
