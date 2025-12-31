@@ -990,12 +990,30 @@ class MarkdownExtractor:
 
 # --- LLM Extraction ---
 
-EXTRACTOR_SYSTEM_PROMPT = (
-    "You are a code analysis expert. "
-    "Extract semantic concepts from source code.\n"
-    "Analyze the provided code and identify high-level 'concepts'.\n"
-    "Return a list of NEW entities found, or updates to existing ones."
-)
+EXTRACTOR_SYSTEM_PROMPT = """\
+You are a code analysis expert. Extract semantic entities from source code.
+
+Return JSON with 'entities' and 'links' arrays.
+
+ENTITY SCHEMA (all fields required):
+- id: unique identifier (e.g., "MyClass", "my_function")
+- name: human-readable name (e.g., "MyClass", "my_function")
+- entity_type: MUST be lowercase, one of: module, class, function, variable, \
+concept, document, api_endpoint, section, code_reference, diagram, task, list
+- summary: brief description
+- location: file path where found
+
+LINK SCHEMA:
+- source_id: id of source entity
+- target_id: id of target entity
+- relationship: MUST be one of: imports, calls, defines, references, \
+inherits, implements, contains, depends_on
+
+IMPORTANT:
+- entity_type must be LOWERCASE (use "class" not "Class")
+- Both 'id' and 'name' fields are REQUIRED for each entity
+- Only use the exact relationship values listed above
+"""
 
 
 def _extractor_context_prompt(ctx: RunContext[ExtractionDeps]) -> str:
@@ -1070,14 +1088,14 @@ class LLMExtractor:
         logfire.info(
             "LLM extraction complete",
             file=file_path,
-            entities=len(result.data.entities),
+            entities=len(result.output.entities),
             input_tokens=token_usage.input_tokens,
             output_tokens=token_usage.output_tokens,
         )
 
         return LLMExtractionResult(
-            entities=result.data.entities,
-            links=result.data.links,
+            entities=result.output.entities,
+            links=result.output.links,
             token_usage=token_usage,
         )
 
@@ -1585,7 +1603,7 @@ Examples:
         # Token accounting panel (only show if LLM was used)
         if km.llm_calls > 0:
             token_table = Table(
-                title="[bold magenta]Token Accounting[/bold]",
+                title="[bold magenta]Token Accounting[/bold magenta]",
                 show_header=True,
                 header_style="bold magenta",
             )

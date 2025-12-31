@@ -107,7 +107,7 @@ async def test_llm_extractor_mock():
 
     # Mock the agent run result
     mock_agent_result = MagicMock()
-    mock_agent_result.data = mock_result
+    mock_agent_result.output = mock_result
     mock_agent_result.usage.return_value = mock_usage
 
     # Mock the agent run

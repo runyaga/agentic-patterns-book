@@ -2,9 +2,11 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import pytest
+from pydantic import ValidationError
 
 from agentic_patterns.domain_exploration import ExplorationBoundary
 from agentic_patterns.domain_exploration import ExplorationFrontier
+from agentic_patterns.domain_exploration import ExtractionResult
 from agentic_patterns.domain_exploration import KnowledgeStore
 from agentic_patterns.domain_exploration import SemanticEntity
 from agentic_patterns.domain_exploration import SemanticLink
@@ -207,3 +209,110 @@ async def test_boundary_max_files():
         # For this test, we just want to see that it's not failing
         # and respects the logic.
         assert len(modules) > 0
+
+
+class TestExtractionResultValidation:
+    """Tests for ExtractionResult schema validation."""
+
+    def test_valid_extraction_result(self):
+        """Valid data should parse without errors."""
+        result = ExtractionResult(
+            entities=[
+                SemanticEntity(
+                    id="MyClass",
+                    name="MyClass",
+                    entity_type="class",
+                    summary="A test class",
+                    location="/path/to/file.py",
+                )
+            ],
+            links=[
+                SemanticLink(
+                    source_id="MyClass",
+                    target_id="BaseClass",
+                    relationship="inherits",
+                )
+            ],
+        )
+        assert len(result.entities) == 1
+        assert result.entities[0].entity_type == "class"
+
+    def test_entity_type_must_be_lowercase(self):
+        """Capitalized entity_type should be rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            SemanticEntity(
+                id="MyClass",
+                name="MyClass",
+                entity_type="Class",  # Wrong: should be "class"
+                summary="A test class",
+                location="/path/to/file.py",
+            )
+        assert "entity_type" in str(exc_info.value)
+
+    def test_entity_requires_name_field(self):
+        """Missing name field should be rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            SemanticEntity(
+                id="MyClass",
+                # name is missing
+                entity_type="class",
+                summary="A test class",
+                location="/path/to/file.py",
+            )
+        assert "name" in str(exc_info.value)
+
+    def test_invalid_relationship_rejected(self):
+        """Invalid relationship values should be rejected."""
+        with pytest.raises(ValidationError) as exc_info:
+            SemanticLink(
+                source_id="A",
+                target_id="B",
+                relationship="used_by",  # Invalid
+            )
+        assert "relationship" in str(exc_info.value)
+
+    def test_all_valid_entity_types(self):
+        """All valid entity_type values should be accepted."""
+        valid_types = [
+            "module",
+            "class",
+            "function",
+            "variable",
+            "concept",
+            "document",
+            "api_endpoint",
+            "section",
+            "code_reference",
+            "diagram",
+            "task",
+            "list",
+        ]
+        for entity_type in valid_types:
+            entity = SemanticEntity(
+                id=f"test_{entity_type}",
+                name=f"Test {entity_type}",
+                entity_type=entity_type,
+                summary="Test",
+                location="/test.py",
+            )
+            assert entity.entity_type == entity_type
+
+    def test_all_valid_relationships(self):
+        """All valid relationship values should be accepted."""
+        valid_relationships = [
+            "imports",
+            "calls",
+            "defines",
+            "references",
+            "inherits",
+            "implements",
+            "contains",
+            "depends_on",
+        ]
+        for rel in valid_relationships:
+            link = SemanticLink(
+                source_id="A",
+                target_id="B",
+                relationship=rel,
+            )
+            assert link.relationship == rel
