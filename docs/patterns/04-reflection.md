@@ -2,6 +2,13 @@
 
 Self-correction via automated validation loops.
 
+## Key Insight
+
+> "Generate-once fails when quality matters. Reflection loops let agents critique their own output and retry with feedback—self-improvement without human intervention."
+
+- **Generate Once**: Accept first output. Quality is inconsistent.
+- **Reflection Loop**: Generate → Validate → Retry with feedback. Quality converges.
+
 ## Flow Diagram
 
 ```mermaid

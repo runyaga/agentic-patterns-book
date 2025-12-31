@@ -1,12 +1,15 @@
-# Guardrails and Safety Patterns
+# Chapter 18: Guardrails
 
-**Chapter 18**
+Protective mechanisms for safe and ethical agent behavior.
 
-[Source](https://github.com/yourusername/agentic-patterns/blob/main/src/agentic_patterns/guardrails.py)
+## Key Insight
 
-As agents become more autonomous, ensuring safe and ethical behavior becomes critical. **Guardrails** are protective mechanisms that filter inputs, validate outputs, and constrain agent behavior to prevent harmful, biased, or policy-violating responses.
+> "Guardrails are not about limiting capability—they're about ensuring trust. An agent without guardrails is a liability in production."
 
-## Key Concepts
+- **Input Guardrails**: Block prompt injection, malicious content, policy violations.
+- **Output Guardrails**: Filter toxic content, redact PII, enforce compliance.
+
+## Flow Diagram
 
 ```mermaid
 flowchart LR

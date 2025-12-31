@@ -2,6 +2,13 @@
 
 Classify user intent and route queries to specialized handlers.
 
+## Key Insight
+
+> "A generalist agent that handles everything handles nothing well. Route queries to domain specialists for higher quality and lower latency."
+
+- **Generalist**: Single prompt covers all domains. Quality degrades at scale.
+- **Router + Specialists**: Classify intent, dispatch to experts. Each handler is optimized.
+
 ## Flow Diagram
 
 ```mermaid

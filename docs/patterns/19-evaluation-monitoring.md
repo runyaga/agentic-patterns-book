@@ -1,12 +1,15 @@
-# Evaluation and Monitoring
+# Chapter 19: Evaluation and Monitoring
 
-**Chapter 19**
+Observability infrastructure for understanding agent behavior at scale.
 
-[Source](https://github.com/yourusername/agentic-patterns/blob/main/src/agentic_patterns/evaluation.py)
+## Key Insight
 
-Agents in production need continuous evaluation to ensure quality, detect regressions, and optimize costs. **Evaluation and Monitoring** provides the observability infrastructure to understand agent behavior at scale.
+> "You can't improve what you can't measure. Latency and error rates are table stakes—agent evaluation requires measuring output quality."
 
-## Key Concepts
+- **Traditional Metrics**: Latency, errors, throughput. Necessary but insufficient.
+- **Agent Metrics**: Accuracy, relevance, user satisfaction, cost attribution.
+
+## Flow Diagram
 
 ```mermaid
 flowchart TB

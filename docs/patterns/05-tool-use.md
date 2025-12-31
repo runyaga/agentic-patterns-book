@@ -2,6 +2,13 @@
 
 Enable agents to execute external functions (APIs, DBs, calculations).
 
+## Key Insight
+
+> "LLMs are powerful reasoners but terrible at math, live data, and taking actions. Tools extend agents beyond text generation to interact with the real world."
+
+- **Pure LLM**: Hallucinates numbers, uses stale data, can't act.
+- **LLM + Tools**: Calculates precisely, fetches live data, executes actions.
+
 ## Flow Diagram
 
 ```mermaid

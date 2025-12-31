@@ -2,6 +2,13 @@
 
 Integrate human oversight for high-stakes decisions or low-confidence outputs.
 
+## Key Insight
+
+> "Full automation isn't always the goal. For high-stakes decisions, human oversight catches errors that cost more than the time saved by automation."
+
+- **Full Automation**: Fast but risky. Errors propagate without review.
+- **Human-in-Loop**: Slower but safer. Critical decisions get human sign-off.
+
 ## Flow Diagram
 
 ```mermaid

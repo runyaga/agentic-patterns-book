@@ -2,6 +2,13 @@
 
 A decentralized marketplace where agents bid on tasks based on capabilities.
 
+## Key Insight
+
+> "In a supervisor pattern, the supervisor must know all workers. In a marketplace, agents self-select through bidding—enabling dynamic worker pools and runtime discovery."
+
+- **Supervisor Pattern**: Central controller assigns tasks. Tight coupling.
+- **Marketplace (Agora)**: Agents bid competitively. Best match wins. Decoupled.
+
 ## Flow Diagram
 
 ```mermaid

@@ -1,12 +1,15 @@
 # Chapter 12: Exception Recovery
 
-Source: [`src/agentic_patterns/exception_recovery.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/exception_recovery.py)
+The Phoenix Protocol—intelligent recovery from agent failures.
 
-Automatic recovery from agent exceptions using the Phoenix Protocol.
+## Key Insight
 
-The **Phoenix Protocol** pattern provides a robust recovery mechanism for agent exceptions. Unlike standard retry loops that blindly restart, this pattern uses a "Clinic Agent" to diagnose the root cause of the failure and prescribe a specific fix (e.g., summarizing history to fix context overflow, or clarifying instructions to fix hallucinations).
+> "Blind retries waste tokens and repeat failures. The Phoenix Protocol diagnoses errors before deciding whether to retry, adapt, or abort."
 
-## Key Concepts
+- **Blind Retry**: Same action, same failure. Expensive and ineffective.
+- **Phoenix Protocol**: Classify error → deterministic fix OR clinic diagnosis → targeted recovery.
+
+## Flow Diagram
 
 ```mermaid
 graph TD

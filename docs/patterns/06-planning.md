@@ -2,6 +2,13 @@
 
 Dynamically decompose goals into steps, execute them, and adapt to failures.
 
+## Key Insight
+
+> "Complex goals can't be solved in one step. Planning breaks ambiguous objectives into concrete, executable steps that adapt when things go wrong."
+
+- **One-Shot**: Single attempt at complex goal. Fails unpredictably.
+- **Plan + Execute**: Decompose → Step-by-step → Replan on failure. Robust.
+
 ## Flow Diagram
 
 ```mermaid

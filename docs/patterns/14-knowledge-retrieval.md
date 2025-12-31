@@ -2,6 +2,13 @@
 
 Augment LLMs with external knowledge via embeddings and vector search.
 
+## Key Insight
+
+> "LLMs know what they were trained on—nothing more. RAG grounds responses in your documents, reducing hallucination and enabling answers about proprietary or recent information."
+
+- **Pure LLM**: Hallucinates or refuses questions about unknown data.
+- **RAG**: Retrieves relevant chunks, grounds answers in source documents.
+
 ## Flow Diagram
 
 ```mermaid
