@@ -27,7 +27,7 @@ This is a learning exercise, not a production recommendation.
 
 ## What is this?
 
-A Python port of 21 agentic AI patterns from the **Gulli** book:
+A Python port of 23 agentic AI patterns from the **Gulli** book:
 
 > *Agentic Design Patterns: A Hands-On Guide to Building Intelligent Systems*
 > by Antonio Gulli (Springer, 2025)
@@ -56,7 +56,7 @@ See [Getting Started](getting-started.md) for full setup instructions.
 
 ## Patterns Overview
 
-21 implemented patterns. See [full pattern index](patterns/index.md).
+23 implemented patterns. See [full pattern index](patterns/index.md).
 
 | Category | Patterns |
 |----------|----------|

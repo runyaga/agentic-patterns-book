@@ -104,7 +104,7 @@ Run all patterns against a live Ollama instance:
 ./scripts/integration_test.sh
 ```
 
-**Runtime:** ~20-30 minutes for all 15 patterns (with retries). Individual
+**Runtime:** ~20-30 minutes for all 23 patterns (with retries). Individual
 patterns take 30-120 seconds depending on complexity.
 
 ### Environment Variables
