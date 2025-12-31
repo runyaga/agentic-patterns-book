@@ -5,7 +5,8 @@ Based on the Agentic Design Patterns book Chapter 21:
 Autonomous discovery agent that crawls codebases and builds semantic maps.
 
 Key capabilities:
-- Structural Truth: AST-based extraction (zero-token) for code hierarchy
+- Structural Truth: Tree-sitter extraction (zero-token) for code hierarchy,
+  inheritance, decorators, imports, and TODOs/FIXMEs
 - Semantic Insight: LLM-based summarization of purpose and intent
 - Stable Identity: Scoped IDs (e.g. `pkg.mod.Class`) to survive refactors
 - Token Safety: "Dry Run" mode to preview crawl scope before LLM calls
@@ -28,7 +29,6 @@ stateDiagram-v2
 
 from __future__ import annotations
 
-import ast
 import fnmatch
 import hashlib
 import re
@@ -41,6 +41,7 @@ from typing import Literal
 
 import logfire
 import networkx as nx
+import tree_sitter_python as tspython
 from marktripy.parsers.markdown_it import MarkdownItParser
 from pydantic import BaseModel
 from pydantic import Field
@@ -51,6 +52,10 @@ from pydantic_graph import BaseNode
 from pydantic_graph import End
 from pydantic_graph import Graph
 from pydantic_graph import GraphRunContext
+from tree_sitter import Language
+from tree_sitter import Parser
+from tree_sitter import Query
+from tree_sitter import QueryCursor
 
 from agentic_patterns._models import get_model
 
@@ -75,6 +80,8 @@ class SemanticEntity(BaseModel):
         "section",
         "code_reference",
         "diagram",
+        "task",
+        "list",
     ] = Field(description="Type of entity")
     summary: str = Field(description="Brief description of the entity")
     location: str = Field(
@@ -340,22 +347,70 @@ class ExtractionDeps:
     content: str
 
 
-# --- AST Extraction ---
+# --- Tree-sitter Extraction ---
+
+# Tree-sitter S-expression queries for Python
+PYTHON_QUERIES = {
+    "classes": """
+        (class_definition
+            name: (identifier) @class_name
+            superclasses: (argument_list
+                (identifier) @base_class)?
+        ) @class_def
+    """,
+    "functions": """
+        (function_definition
+            name: (identifier) @func_name
+        ) @func_def
+    """,
+    "decorated": """
+        (decorated_definition
+            (decorator
+                (identifier) @decorator_name)?
+            (decorator
+                (call function: (identifier) @decorator_call_name))?
+            definition: [
+                (function_definition name: (identifier) @decorated_func)
+                (class_definition name: (identifier) @decorated_class)
+            ]
+        ) @decorated_def
+    """,
+    "imports": """
+        (import_statement
+            name: (dotted_name) @import_name)
+        (import_from_statement
+            module_name: (dotted_name) @from_module)
+    """,
+    "comments": """
+        (comment) @comment
+    """,
+}
 
 
 # --8<-- [start:extraction]
-class ASTExtractor:
-    """Extracts structural entities using Python's AST."""
+class TreeSitterExtractor:
+    """
+    Multi-language entity extractor using tree-sitter.
+
+    Captures:
+    - Classes with inheritance relationships
+    - Functions with decorators
+    - Imports and dependencies
+    - Significant comments (TODOs, FIXMEs)
+    """
+
+    def __init__(self) -> None:
+        self._language = Language(tspython.language())
+        self._parser = Parser(self._language)
 
     def extract(self, file_path: str, content: str) -> ExtractionResult:
+        """Extract entities from Python source code using tree-sitter."""
+        tree = self._parser.parse(bytes(content, "utf8"))
         entities: list[SemanticEntity] = []
         links: list[SemanticLink] = []
-        try:
-            tree = ast.parse(content, filename=file_path)
-        except SyntaxError:
-            return ExtractionResult(entities=[], links=[])
-
         scope_name = self._path_to_scope(file_path)
+
+        # Create module entity
         module_id = generate_entity_id("module", scope_name, "__init__")
         entities.append(
             SemanticEntity(
@@ -367,17 +422,80 @@ class ASTExtractor:
             )
         )
 
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef):
-                class_id = generate_entity_id("class", scope_name, node.name)
+        # Extract classes with inheritance
+        self._extract_classes(
+            tree, content, scope_name, file_path, module_id, entities, links
+        )
+
+        # Extract functions
+        self._extract_functions(
+            tree, content, scope_name, file_path, module_id, entities, links
+        )
+
+        # Extract decorated definitions
+        self._extract_decorated(tree, content, scope_name, file_path, entities)
+
+        # Extract imports
+        self._extract_imports(tree, content, module_id, links)
+
+        # Extract significant comments
+        self._extract_comments(
+            tree, content, scope_name, file_path, module_id, entities, links
+        )
+
+        return ExtractionResult(entities=entities, links=links)
+
+    def _run_query(
+        self, query_name: str, root_node: Any
+    ) -> list[tuple[int, dict[str, list[Any]]]]:
+        """Run a tree-sitter query and return matches."""
+        query = Query(self._language, PYTHON_QUERIES[query_name])
+        cursor = QueryCursor(query)
+        return list(cursor.matches(root_node))
+
+    def _extract_classes(
+        self,
+        tree: Any,
+        content: str,
+        scope_name: str,
+        file_path: str,
+        module_id: str,
+        entities: list[SemanticEntity],
+        links: list[SemanticLink],
+    ) -> None:
+        """Extract class definitions with inheritance."""
+        matches = self._run_query("classes", tree.root_node)
+        seen_classes: set[str] = set()
+
+        for _, captures in matches:
+            for class_node in captures.get("class_name", []):
+                class_name = content[
+                    class_node.start_byte : class_node.end_byte
+                ]
+                if class_name in seen_classes:
+                    continue
+                seen_classes.add(class_name)
+
+                class_id = generate_entity_id("class", scope_name, class_name)
+                docstring = self._get_docstring(class_node.parent, content)
+
+                # Get base classes
+                base_classes: list[str] = []
+                for base_node in captures.get("base_class", []):
+                    start, end = base_node.start_byte, base_node.end_byte
+                    base_classes.append(content[start:end])
+
                 entities.append(
                     SemanticEntity(
                         id=class_id,
-                        name=node.name,
+                        name=class_name,
                         entity_type="class",
-                        summary=self._get_docstring(node)
-                        or f"Class {node.name}",
+                        summary=docstring or f"Class {class_name}",
                         location=file_path,
+                        metadata={
+                            "line": class_node.start_point[0] + 1,
+                            "base_classes": base_classes,
+                        },
                     )
                 )
                 links.append(
@@ -387,16 +505,55 @@ class ASTExtractor:
                         relationship="defines",
                     )
                 )
-            elif isinstance(node, ast.FunctionDef):
-                func_id = generate_entity_id("function", scope_name, node.name)
+
+                # Create inheritance links
+                for base_name in base_classes:
+                    base_id = generate_entity_id(
+                        "class", scope_name, base_name
+                    )
+                    links.append(
+                        SemanticLink(
+                            source_id=class_id,
+                            target_id=base_id,
+                            relationship="inherits",
+                        )
+                    )
+
+    def _extract_functions(
+        self,
+        tree: Any,
+        content: str,
+        scope_name: str,
+        file_path: str,
+        module_id: str,
+        entities: list[SemanticEntity],
+        links: list[SemanticLink],
+    ) -> None:
+        """Extract function definitions."""
+        matches = self._run_query("functions", tree.root_node)
+        seen_funcs: set[str] = set()
+
+        for _, captures in matches:
+            for func_node in captures.get("func_name", []):
+                func_name = content[func_node.start_byte : func_node.end_byte]
+                if func_name in seen_funcs:
+                    continue
+                seen_funcs.add(func_name)
+
+                func_id = generate_entity_id("function", scope_name, func_name)
+                docstring = self._get_docstring(func_node.parent, content)
+
                 entities.append(
                     SemanticEntity(
                         id=func_id,
-                        name=node.name,
+                        name=func_name,
                         entity_type="function",
-                        summary=self._get_docstring(node)
-                        or f"Function {node.name}",
+                        summary=docstring or f"Function {func_name}",
                         location=file_path,
+                        metadata={
+                            "line": func_node.start_point[0] + 1,
+                            "decorators": [],
+                        },
                     )
                 )
                 links.append(
@@ -406,21 +563,159 @@ class ASTExtractor:
                         relationship="defines",
                     )
                 )
-        return ExtractionResult(entities=entities, links=links)
+
+    def _extract_decorated(
+        self,
+        tree: Any,
+        content: str,
+        scope_name: str,
+        file_path: str,
+        entities: list[SemanticEntity],
+    ) -> None:
+        """Extract decorated definitions and update their metadata."""
+        matches = self._run_query("decorated", tree.root_node)
+
+        for _, captures in matches:
+            decorators: list[str] = []
+            for key in ("decorator_name", "decorator_call_name"):
+                for dec_node in captures.get(key, []):
+                    dec = content[dec_node.start_byte : dec_node.end_byte]
+                    decorators.append(dec)
+
+            # Update decorated functions
+            for func_node in captures.get("decorated_func", []):
+                func_name = content[func_node.start_byte : func_node.end_byte]
+                func_id = generate_entity_id("function", scope_name, func_name)
+                for e in entities:
+                    if e.id == func_id:
+                        e.metadata["decorators"] = decorators.copy()
+                        break
+
+            # Update decorated classes
+            for class_node in captures.get("decorated_class", []):
+                class_name = content[
+                    class_node.start_byte : class_node.end_byte
+                ]
+                class_id = generate_entity_id("class", scope_name, class_name)
+                for e in entities:
+                    if e.id == class_id:
+                        e.metadata["decorators"] = decorators.copy()
+                        break
+
+    def _extract_imports(
+        self,
+        tree: Any,
+        content: str,
+        module_id: str,
+        links: list[SemanticLink],
+    ) -> None:
+        """Extract import statements as dependency links."""
+        matches = self._run_query("imports", tree.root_node)
+        seen_imports: set[str] = set()
+
+        for _, captures in matches:
+            for key in ("import_name", "from_module"):
+                for node in captures.get(key, []):
+                    text = content[node.start_byte : node.end_byte]
+                    if text in seen_imports:
+                        continue
+                    seen_imports.add(text)
+
+                    target_id = generate_entity_id("module", text, "__init__")
+                    links.append(
+                        SemanticLink(
+                            source_id=module_id,
+                            target_id=target_id,
+                            relationship="imports",
+                        )
+                    )
+
+    def _extract_comments(
+        self,
+        tree: Any,
+        content: str,
+        scope_name: str,
+        file_path: str,
+        module_id: str,
+        entities: list[SemanticEntity],
+        links: list[SemanticLink],
+    ) -> None:
+        """Extract significant comments (TODOs, FIXMEs, etc.)."""
+        matches = self._run_query("comments", tree.root_node)
+
+        for _, captures in matches:
+            for node in captures.get("comment", []):
+                text = content[node.start_byte : node.end_byte]
+                significance = self._classify_comment(text)
+                if not significance:
+                    continue
+
+                comment_id = generate_entity_id(
+                    "comment", scope_name, f"L{node.start_point[0]}"
+                )
+                entities.append(
+                    SemanticEntity(
+                        id=comment_id,
+                        name=f"{significance}: L{node.start_point[0] + 1}",
+                        entity_type="concept",
+                        summary=text.strip()[:100],
+                        location=file_path,
+                        metadata={
+                            "line": node.start_point[0] + 1,
+                            "comment_type": significance,
+                        },
+                    )
+                )
+                links.append(
+                    SemanticLink(
+                        source_id=module_id,
+                        target_id=comment_id,
+                        relationship="contains",
+                    )
+                )
+
+    def _classify_comment(self, text: str) -> str | None:
+        """Classify a comment by significance."""
+        upper = text.upper()
+        if "TODO" in upper:
+            return "TODO"
+        if "FIXME" in upper:
+            return "FIXME"
+        if "HACK" in upper:
+            return "HACK"
+        if "XXX" in upper:
+            return "XXX"
+        if "NOTE" in upper:
+            return "NOTE"
+        return None
+
+    def _get_docstring(self, node: Any, content: str) -> str | None:
+        """Extract docstring from a class or function node."""
+        if not node:
+            return None
+        for child in node.children:
+            if child.type == "block":
+                for stmt in child.children:
+                    if stmt.type == "expression_statement":
+                        for expr in stmt.children:
+                            if expr.type == "string":
+                                doc = content[expr.start_byte : expr.end_byte]
+                                doc = doc.strip("'\"").strip()
+                                return doc[:200] if doc else None
+                break
+        return None
 
     def _path_to_scope(self, file_path: str) -> str:
+        """Convert file path to scope identifier."""
         p = Path(file_path)
         parts = list(p.parts)
-        if parts[-1].endswith(".py"):
+        if parts and parts[-1].endswith(".py"):
             parts[-1] = parts[-1][:-3]
         try:
             src_idx = parts.index("src")
             return ".".join(parts[src_idx + 1 :])
         except ValueError:
             return ".".join(parts)
-
-    def _get_docstring(self, node: Any) -> str | None:
-        return ast.get_docstring(node)
 
 
 # --- Markdown Extraction ---
@@ -541,6 +836,74 @@ class MarkdownExtractor:
                         )
                     )
 
+            elif node.type == "list_item":
+                # Check for task list items (- [ ] or - [x])
+                text = self._get_text_content(node)
+                if text.startswith("[ ] ") or text.startswith("[x] "):
+                    is_done = text.startswith("[x]")
+                    task_text = text[4:].strip()
+                    task_id = generate_entity_id(
+                        "task", scope_name, task_text[:50]
+                    )
+                    status = "Done" if is_done else "Todo"
+                    entities.append(
+                        SemanticEntity(
+                            id=task_id,
+                            name=task_text[:60],
+                            entity_type="task",
+                            summary=f"{status}: {task_text}",
+                            location=file_path,
+                            metadata={"completed": is_done},
+                        )
+                    )
+                    links.append(
+                        SemanticLink(
+                            source_id=doc_id,
+                            target_id=task_id,
+                            relationship="contains",
+                        )
+                    )
+
+            elif node.type == "list":
+                # Extract regular lists (not task lists)
+                items = self._extract_list_items(node)
+                # Skip if this is a task list (all items are tasks)
+                if items and not all(
+                    i.startswith("[ ] ") or i.startswith("[x] ") for i in items
+                ):
+                    is_ordered = getattr(node, "ordered", False)
+                    list_type = "ordered" if is_ordered else "bullet"
+                    # Use first item for ID generation
+                    list_id = generate_entity_id(
+                        "list", scope_name, items[0][:30]
+                    )
+                    # Build summary from first few items
+                    preview = "; ".join(items[:3])
+                    if len(items) > 3:
+                        preview += f"; ... (+{len(items) - 3} more)"
+                    count = len(items)
+                    list_name = f"{list_type.title()} list ({count} items)"
+                    entities.append(
+                        SemanticEntity(
+                            id=list_id,
+                            name=list_name,
+                            entity_type="list",
+                            summary=preview[:100],
+                            location=file_path,
+                            metadata={
+                                "list_type": list_type,
+                                "item_count": len(items),
+                            },
+                        )
+                    )
+                    links.append(
+                        SemanticLink(
+                            source_id=doc_id,
+                            target_id=list_id,
+                            relationship="contains",
+                        )
+                    )
+
         # Also check raw content for --8<-- outside code blocks
         for match in SNIPPET_RE.finditer(content):
             snippet_ref = match.group(1)
@@ -585,6 +948,17 @@ class MarkdownExtractor:
                 self._get_text_content(child) for child in node.children
             )
         return ""
+
+    def _extract_list_items(self, list_node: Any) -> list[str]:
+        """Extract text content of all items in a list node."""
+        items: list[str] = []
+        if hasattr(list_node, "children") and list_node.children:
+            for child in list_node.children:
+                if child.type == "list_item":
+                    text = self._get_text_content(child).strip()
+                    if text:
+                        items.append(text)
+        return items
 
     def _path_to_scope(self, file_path: str) -> str:
         """Convert file path to scope identifier."""
@@ -848,7 +1222,7 @@ class ExtractNode(BaseNode[CartographerState, CartographerDeps, KnowledgeMap]):
         boundary = ctx.deps.boundary
         extracted_entities: list[SemanticEntity] = []
         extracted_links: list[SemanticLink] = []
-        ast_extractor = ASTExtractor()
+        ts_extractor = TreeSitterExtractor()
         md_extractor = MarkdownExtractor()
         llm_extractor = LLMExtractor(model=ctx.deps.model)
 
@@ -878,8 +1252,8 @@ class ExtractNode(BaseNode[CartographerState, CartographerDeps, KnowledgeMap]):
 
                 # Choose extractor based on file type
                 if file_path.endswith(".py"):
-                    print(f"   [Analyzer] AST: {file_name}")
-                    result = ast_extractor.extract(file_path, content)
+                    print(f"   [Analyzer] TS:  {file_name}")
+                    result = ts_extractor.extract(file_path, content)
                 elif file_path.endswith(".md"):
                     print(f"   [Analyzer] MD:  {file_name}")
                     result = md_extractor.extract(file_path, content)
@@ -1188,10 +1562,18 @@ if __name__ == "__main__":
             loc_branch = tree.add(f"[dim]{Path(loc).name}[/]")
             for e in entities[:5]:  # Limit per file
                 icon = {
+                    # Python entities
                     "module": "[blue]M[/]",
                     "class": "[green]C[/]",
                     "function": "[yellow]F[/]",
                     "concept": "[magenta]~[/]",
+                    # Markdown entities
+                    "document": "[cyan]D[/]",
+                    "section": "[dim]#[/]",
+                    "diagram": "[magenta]>[/]",
+                    "task": "[yellow]T[/]",
+                    "list": "[dim]L[/]",
+                    "code_reference": "[blue]@[/]",
                 }.get(e.entity_type, "[dim]?[/]")
                 loc_branch.add(f"{icon} {e.name}")
             if len(entities) > 5:
@@ -1226,6 +1608,66 @@ if __name__ == "__main__":
 
             console.print(link_table)
 
+    def render_markdown_insights(km: KnowledgeMap, console: Console) -> None:
+        """Show insights from markdown extraction."""
+        # Separate code vs docs entities
+        code_types = {"module", "class", "function", "variable", "concept"}
+        doc_types = {
+            "document",
+            "section",
+            "diagram",
+            "task",
+            "list",
+            "code_reference",
+        }
+
+        code_entities = [e for e in km.entities if e.entity_type in code_types]
+        doc_entities = [e for e in km.entities if e.entity_type in doc_types]
+
+        if not doc_entities:
+            return
+
+        console.print()
+        console.rule("[bold cyan]Documentation Insights")
+        console.print()
+
+        # Show breakdown
+        console.print(
+            f"[bold]Code entities:[/] {len(code_entities)}  "
+            f"[bold]Doc entities:[/] {len(doc_entities)}"
+        )
+        console.print()
+
+        # Show diagrams found
+        diagrams = [e for e in km.entities if e.entity_type == "diagram"]
+        if diagrams:
+            console.print("[bold]Mermaid Diagrams:[/bold]")
+            for d in diagrams[:5]:
+                dtype = d.metadata.get("diagram_type", "diagram")
+                loc = Path(d.location).name
+                console.print(f"  [magenta]>[/] {dtype} in {loc}")
+            console.print()
+
+        # Show tasks found
+        tasks = [e for e in km.entities if e.entity_type == "task"]
+        if tasks:
+            done = sum(1 for t in tasks if t.metadata.get("completed"))
+            console.print(f"[bold]Tasks:[/bold] {len(tasks)} ({done} done)")
+            for t in tasks[:5]:
+                check = "[x]" if t.metadata.get("completed") else "[ ]"
+                console.print(f"  {check} {t.name[:50]}")
+            if len(tasks) > 5:
+                console.print(f"  [dim]... +{len(tasks) - 5} more[/dim]")
+            console.print()
+
+        # Show code references (doc-to-code links)
+        refs = [e for e in km.entities if e.entity_type == "code_reference"]
+        if refs:
+            console.print(f"[bold]Code References:[/bold] {len(refs)}")
+            for r in refs[:5]:
+                console.print(f"  [blue]@[/] {r.name}")
+            console.print()
+
     async def main() -> None:
         console = Console()
         console.print()
@@ -1236,24 +1678,25 @@ if __name__ == "__main__":
         if len(sys.argv) > 1:
             target = sys.argv[1]
         else:
-            # Default: explore the agentic_patterns source
-            target = str(Path(__file__).parent)
+            # Default: explore the entire project (src + docs)
+            target = str(Path(__file__).parent.parent.parent)
 
         console.print(f"[dim]Exploring: {target}[/dim]")
         console.print("[dim]Mode: Dry run (AST only, no LLM calls)[/dim]")
         console.print()
 
-        # Configure for demo
+        # Configure for demo - include both Python and Markdown
         boundary = ExplorationBoundary(
-            max_depth=3,
-            max_files=15,
+            max_depth=4,
+            max_files=30,
             dry_run=True,  # AST only for fast demo
-            include_patterns=["**/*.py"],
+            include_patterns=["**/*.py", "**/*.md"],
         )
 
         console.print(
             f"[dim]Config: depth={boundary.max_depth}, "
-            f"max_files={boundary.max_files}[/dim]\n"
+            f"max_files={boundary.max_files}, "
+            f"patterns={boundary.include_patterns}[/dim]\n"
         )
 
         # Run exploration
@@ -1261,6 +1704,9 @@ if __name__ == "__main__":
 
         # Display results
         render_results(km, console)
+
+        # Show markdown-specific insights
+        render_markdown_insights(km, console)
 
         # Graph analysis
         store = KnowledgeStore(km)

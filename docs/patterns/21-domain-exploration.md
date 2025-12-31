@@ -69,10 +69,28 @@ Source: [`src/agentic_patterns/domain_exploration.py`](https://github.com/runyag
 
 ## Core Strategies
 
-### 1. Hybrid Senses (AST + LLM)
+### 1. Hybrid Senses (Tree-sitter + LLM + Markdown)
 To balance accuracy and cost, the Cartographer uses a tiered extraction strategy:
-- **AST (The Skeleton)**: Uses Python's `ast` module to identify classes, functions, and imports with 100% precision and zero token cost.
+- **Tree-sitter (The Skeleton)**: Uses `tree-sitter` for robust, multi-language code parsing. Captures classes with inheritance, functions with decorators, imports, and significant comments (TODOs, FIXMEs). Extensible to TypeScript, Go, Rust, and 100+ other languages.
+- **Markdown AST (The Documentation)**: Uses `marktripy` to parse markdown structure—headings become sections, mermaid code blocks become diagrams, task lists (`- [ ]`, `- [x]`) become trackable tasks, and regular lists become list entities.
 - **LLM (The Flesh)**: Uses a `pydantic-ai` agent to provide semantic summaries and identify high-level "concepts" (e.g., "The Observer Pattern") that are not explicitly named in the code.
+
+### Entity Types
+
+The Cartographer extracts the following entity types:
+
+| Type | Source | Description |
+|------|--------|-------------|
+| `module` | Python AST | Python module file |
+| `class` | Python AST | Class definition with docstring |
+| `function` | Python AST | Function/method definition |
+| `document` | Markdown AST | Markdown file (root entity) |
+| `section` | Markdown AST | Heading (H1-H6) |
+| `diagram` | Markdown AST | Mermaid diagram (flowchart, sequence, state, etc.) |
+| `task` | Markdown AST | Task list item (`- [ ]` or `- [x]`) |
+| `list` | Markdown AST | Bullet or ordered list |
+| `code_reference` | Markdown AST | `--8<--` snippet inclusion |
+| `concept` | LLM | High-level pattern or architecture insight |
 
 ### 2. Stable Identity (Scoped IDs)
 Traditional indexing often breaks when files move. The Cartographer generates IDs based on **logical scope** (e.g., `pkg.module.ClassName`) rather than file paths or line numbers. This ensures the map remains stable during refactoring.
@@ -87,6 +105,7 @@ Exploration can take time. The implementation uses atomic JSON writes (writing t
 - **Gap Detection**: "Find all functions that are exported but not documented."
 - **Dependency Analysis**: Visualizing how modules relate to identify circular dependencies or spaghetti code.
 - **Technical Debt**: Identifying "orphan" components that are defined but never imported.
+- **Documentation Analysis**: Track mermaid diagrams, find incomplete task lists, or identify doc-to-code references.
 
 ### When NOT to Use
 - **Small Corpus**: When a simple `grep` or `README` is sufficient.
@@ -102,8 +121,29 @@ Exploration can take time. The implementation uses atomic JSON writes (writing t
 
 ## Example
 
-Build a map of this repository:
+Build a map of this repository (Python + Markdown):
 
 ```bash
-uv run python examples/cartographer_demo.py
+# Run the built-in demo (explores both .py and .md files)
+.venv/bin/python -m agentic_patterns.domain_exploration
+
+# Or target a specific directory
+.venv/bin/python -m agentic_patterns.domain_exploration /path/to/repo
+```
+
+Example output shows code entities (modules, classes, functions) alongside documentation entities (sections, diagrams, tasks, lists):
+
+```
+Entity Types
+┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┓
+┃ Type            ┃      Count ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━┩
+│ function        │        245 │
+│ section         │         60 │
+│ class           │         42 │
+│ module          │         23 │
+│ list            │         25 │
+│ document        │          5 │
+│ diagram         │          3 │
+└─────────────────┴────────────┘
 ```
