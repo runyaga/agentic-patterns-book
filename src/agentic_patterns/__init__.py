@@ -7,8 +7,13 @@ A port of patterns from the "Agentic Design Patterns" book.
 from agentic_patterns._models import get_model
 from agentic_patterns.agent_marketplace import AgentBid
 from agentic_patterns.agent_marketplace import AgentCapability
+from agentic_patterns.agent_marketplace import AgentJudgmentStrategy
+from agentic_patterns.agent_marketplace import BestSkillMatchStrategy
+from agentic_patterns.agent_marketplace import HighestConfidenceStrategy
+from agentic_patterns.agent_marketplace import SelectionStrategy
 from agentic_patterns.agent_marketplace import TaskResult
 from agentic_patterns.agent_marketplace import TaskRFP
+from agentic_patterns.agent_marketplace import WeightedScoreStrategy
 from agentic_patterns.agent_marketplace import create_bidder_agent
 from agentic_patterns.agent_marketplace import run_marketplace_task
 from agentic_patterns.exception_recovery import ErrorCategory
@@ -33,6 +38,12 @@ __all__ = [
     "TaskResult",
     "AgentBid",
     "AgentCapability",
+    # Selection Strategies (Ch 15b)
+    "SelectionStrategy",
+    "HighestConfidenceStrategy",
+    "BestSkillMatchStrategy",
+    "WeightedScoreStrategy",
+    "AgentJudgmentStrategy",
     # Exception Recovery (Ch 12)
     "recoverable_run",
     "RecoveryConfig",

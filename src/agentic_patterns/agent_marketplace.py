@@ -39,9 +39,15 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from dataclasses import field
+from typing import TYPE_CHECKING
 from typing import Any
+from typing import Protocol
+from typing import runtime_checkable
 from uuid import UUID
 from uuid import uuid4
+
+if TYPE_CHECKING:
+    pass
 
 from pydantic import BaseModel
 from pydantic import Field
@@ -137,12 +143,181 @@ class AgoraState:
     rfp: TaskRFP
     registered_bidders: list[AgentCapability]
     bidder_agents: dict[str, Agent[BidderContext, BidResponse]]
+    strategy: Any = None  # SelectionStrategy, default: WeightedScore
     bid_timeout_seconds: float = 5.0
     bids: list[AgentBid] = field(default_factory=list)
     winning_bid: AgentBid | None = None
 
 
 # --8<-- [end:models]
+
+
+# --8<-- [start:strategies]
+@runtime_checkable
+class SelectionStrategy(Protocol):
+    """Protocol for bid selection strategies."""
+
+    async def select(
+        self,
+        bids: list[AgentBid],
+        rfp: TaskRFP,
+        capabilities: dict[str, AgentCapability],
+    ) -> AgentBid | None:
+        """
+        Select the winning bid.
+
+        Args:
+            bids: Valid bids (already filtered by min_confidence).
+            rfp: The original task request.
+            capabilities: Map of agent_id -> AgentCapability.
+
+        Returns:
+            Winning bid, or None if no suitable bid found.
+        """
+        ...
+
+
+class HighestConfidenceStrategy:
+    """Select the bid with highest confidence score."""
+
+    async def select(
+        self,
+        bids: list[AgentBid],
+        rfp: TaskRFP,
+        capabilities: dict[str, AgentCapability],
+    ) -> AgentBid | None:
+        """Select bid with highest confidence."""
+        if not bids:
+            return None
+        return max(bids, key=lambda b: b.confidence)
+
+
+class BestSkillMatchStrategy:
+    """Select the bid with best skill overlap."""
+
+    async def select(
+        self,
+        bids: list[AgentBid],
+        rfp: TaskRFP,
+        capabilities: dict[str, AgentCapability],
+    ) -> AgentBid | None:
+        """Select bid with best skill match."""
+        if not bids:
+            return None
+
+        def skill_score(bid: AgentBid) -> float:
+            cap = capabilities.get(bid.agent_id)
+            if not cap or not rfp.required_skills:
+                return 0.0
+            matched = len(set(cap.skills) & set(rfp.required_skills))
+            return matched / len(rfp.required_skills)
+
+        return max(bids, key=skill_score)
+
+
+@dataclass
+class WeightedScoreStrategy:
+    """
+    Select using weighted combination of confidence and skill match.
+
+    This is the default strategy from Milestone 1.
+    """
+
+    confidence_weight: float = 0.6
+    skill_weight: float = 0.4
+
+    async def select(
+        self,
+        bids: list[AgentBid],
+        rfp: TaskRFP,
+        capabilities: dict[str, AgentCapability],
+    ) -> AgentBid | None:
+        """Select bid with best weighted score."""
+        if not bids:
+            return None
+
+        def score(bid: AgentBid) -> float:
+            cap = capabilities.get(bid.agent_id)
+            if not cap or not rfp.required_skills:
+                return bid.confidence * self.confidence_weight
+
+            matched = len(set(cap.skills) & set(rfp.required_skills))
+            skill_score = matched / len(rfp.required_skills)
+
+            return (
+                self.confidence_weight * bid.confidence
+                + self.skill_weight * skill_score
+            )
+
+        return max(bids, key=score)
+
+
+class JudgmentResult(BaseModel):
+    """Result from the selector agent."""
+
+    selected_agent_id: str = Field(description="ID of the winning agent")
+    reasoning: str = Field(description="Why this agent was selected")
+
+
+class AgentJudgmentStrategy:
+    """
+    Use an LLM agent to qualitatively evaluate bids.
+
+    Best for tasks where proposal quality matters more than
+    simple metrics (creative tasks, complex analysis).
+    """
+
+    def __init__(self) -> None:
+        """Initialize with a selector agent."""
+        self.selector = Agent(
+            get_model(),
+            system_prompt=(
+                "You are a procurement specialist. Given a task and "
+                "multiple bids, select the best bidder based on:\n"
+                "1. How well their skills match the requirements\n"
+                "2. Quality and clarity of their proposal\n"
+                "3. Confidence level (but don't over-weight it)\n\n"
+                "Choose the agent most likely to succeed."
+            ),
+            output_type=JudgmentResult,
+        )
+
+    async def select(
+        self,
+        bids: list[AgentBid],
+        rfp: TaskRFP,
+        capabilities: dict[str, AgentCapability],
+    ) -> AgentBid | None:
+        """Select bid using LLM judgment."""
+        if not bids:
+            return None
+
+        # Format bids for the selector
+        bids_text = "\n".join(
+            f"- {b.agent_id}: confidence={b.confidence:.2f}, "
+            f'proposal="{b.proposal}"'
+            for b in bids
+        )
+
+        caps_text = "\n".join(
+            f"- {c.agent_id}: skills={c.skills}"
+            for c in capabilities.values()
+            if c.agent_id in {b.agent_id for b in bids}
+        )
+
+        result = await self.selector.run(
+            f"Task: {rfp.requirement}\n"
+            f"Required skills: {rfp.required_skills}\n\n"
+            f"Agent capabilities:\n{caps_text}\n\n"
+            f"Bids:\n{bids_text}\n\n"
+            f"Select the best agent."
+        )
+
+        winner_id = result.output.selected_agent_id
+        return next((b for b in bids if b.agent_id == winner_id), bids[0])
+
+
+# --8<-- [end:strategies]
 
 
 # --8<-- [start:agents]
@@ -265,15 +440,16 @@ class CollectBidsNode(BaseNode[AgoraState, None, TaskResult]):
 
 @dataclass
 class SelectWinnerNode(BaseNode[AgoraState, None, TaskResult]):
-    """Select the winning bid using weighted scoring."""
+    """Select the winning bid using the configured strategy."""
 
     async def run(
         self,
         ctx: GraphRunContext[AgoraState],
     ) -> ExecuteTaskNode | End[TaskResult]:
-        """Select winner based on confidence and skill match."""
+        """Select winner using the configured selection strategy."""
         rfp = ctx.state.rfp
         bids = ctx.state.bids
+        strategy = ctx.state.strategy or WeightedScoreStrategy()
 
         # Filter by minimum confidence
         valid_bids = [b for b in bids if b.confidence >= rfp.min_confidence]
@@ -289,30 +465,27 @@ class SelectWinnerNode(BaseNode[AgoraState, None, TaskResult]):
                 )
             )
 
-        # Calculate weighted score for each bid
-        def calculate_score(bid: AgentBid) -> float:
-            cap = next(
-                (
-                    c
-                    for c in ctx.state.registered_bidders
-                    if c.agent_id == bid.agent_id
-                ),
-                None,
+        # Build capabilities dict for strategy
+        capabilities = {
+            cap.agent_id: cap for cap in ctx.state.registered_bidders
+        }
+
+        # Use the strategy to select the winner
+        winner = await strategy.select(valid_bids, rfp, capabilities)
+
+        if not winner:
+            return End(
+                TaskResult(
+                    rfp_id=rfp.id,
+                    agent_id="",
+                    success=False,
+                    output="",
+                    error_message="Strategy returned no winner",
+                )
             )
-            if not cap or not rfp.required_skills:
-                return bid.confidence
 
-            matched = len(set(cap.skills) & set(rfp.required_skills))
-            skill_score = matched / len(rfp.required_skills)
-
-            # Weighted: 60% confidence, 40% skill match
-            return 0.6 * bid.confidence + 0.4 * skill_score
-
-        winner = max(valid_bids, key=calculate_score)
         ctx.state.winning_bid = winner
-
-        score = calculate_score(winner)
-        print(f"Winner: {winner.agent_id} (score: {score:.2f})")
+        print(f"Winner: {winner.agent_id}")
 
         return ExecuteTaskNode()
 
@@ -391,18 +564,19 @@ agora_graph: Graph[AgoraState, None, TaskResult] = Graph(
 async def run_marketplace_task(
     rfp: TaskRFP,
     bidders: list[tuple[AgentCapability, Agent[BidderContext, BidResponse]]],
+    strategy: SelectionStrategy | None = None,
     bid_timeout_seconds: float = 5.0,
 ) -> TaskResult:
     """
     Run a task through the marketplace.
 
     Posts an RFP, collects bids from registered agents, selects a winner
-    based on weighted scoring (confidence + skill match), and executes
-    the task with the winner.
+    using the configured strategy, and executes the task with the winner.
 
     Args:
         rfp: The task request for proposal.
         bidders: List of (capability, agent) tuples.
+        strategy: Selection strategy (default: WeightedScoreStrategy).
         bid_timeout_seconds: Timeout for each bid (default: 5.0).
 
     Returns:
@@ -422,15 +596,26 @@ async def run_marketplace_task(
             ),
             bidders=[(summarizer, create_bidder_agent(summarizer))],
         )
+
+        # With custom strategy:
+        result = await run_marketplace_task(
+            rfp=rfp,
+            bidders=bidders,
+            strategy=HighestConfidenceStrategy(),
+        )
     """
     print("=" * 60)
     print("Agent Marketplace: Starting")
     print("=" * 60)
 
+    if strategy is None:
+        strategy = WeightedScoreStrategy()
+
     state = AgoraState(
         rfp=rfp,
         registered_bidders=[cap for cap, _ in bidders],
         bidder_agents={cap.agent_id: agent for cap, agent in bidders},
+        strategy=strategy,
         bid_timeout_seconds=bid_timeout_seconds,
     )
 

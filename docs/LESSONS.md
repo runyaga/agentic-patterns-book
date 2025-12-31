@@ -23,6 +23,18 @@
 - Call `await node.run(ctx)` directly
 - Check return type (next node class or `End`)
 
+### Selection Strategies (Ch 15b)
+- Use `@runtime_checkable` for Protocol when `isinstance()` checks needed
+- Strategy pattern: async `select()` method returns winner from bids
+- Default strategy via `AgoraState.strategy` field with `None` default
+- Fallback to default in node: `strategy = ctx.state.strategy or Default()`
+- `@dataclass` for strategies with configurable weights (WeightedScoreStrategy)
+
+### Protocol compliance testing
+- `isinstance(strategy, SelectionStrategy)` works with `@runtime_checkable`
+- Test each strategy's `select()` returns expected bid or `None`
+- Mock LLM calls in AgentJudgmentStrategy tests
+
 ---
 
 # TODOs
@@ -30,5 +42,5 @@
 - [ ] Reimplement parallelization pattern as a graph
 - [ ] Update knowledge_retrieval to use pydantic-ai embeddings API
 - [ ] Update evaluation pattern to use pydantic-ai evaluations framework
-- [ ] Implement Agora Milestone 2: SelectionStrategy protocol
+- [x] ~~Implement Agora Milestone 2: SelectionStrategy protocol~~
 - [ ] Implement Agora Milestone 3: Callbacks and load balancing

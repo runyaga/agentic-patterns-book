@@ -617,3 +617,412 @@ class TestEdgeCases:
             min_confidence=1.0,
         )
         assert rfp.min_confidence == 1.0
+
+
+class TestSelectionStrategies:
+    """Test selection strategy implementations."""
+
+    @pytest.fixture
+    def sample_bids(self):
+        rfp_id = uuid4()
+        return [
+            AgentBid(
+                rfp_id=rfp_id,
+                agent_id="agent_a",
+                confidence=0.7,
+                proposal="Approach A",
+            ),
+            AgentBid(
+                rfp_id=rfp_id,
+                agent_id="agent_b",
+                confidence=0.9,
+                proposal="Approach B",
+            ),
+            AgentBid(
+                rfp_id=rfp_id,
+                agent_id="agent_c",
+                confidence=0.6,
+                proposal="Approach C",
+            ),
+        ]
+
+    @pytest.fixture
+    def sample_caps_dict(self):
+        return {
+            "agent_a": AgentCapability(
+                agent_id="agent_a",
+                name="Agent A",
+                skills=["skill_a", "skill_b"],
+                description="Good at A",
+            ),
+            "agent_b": AgentCapability(
+                agent_id="agent_b",
+                name="Agent B",
+                skills=["skill_c"],
+                description="Good at B",
+            ),
+            "agent_c": AgentCapability(
+                agent_id="agent_c",
+                name="Agent C",
+                skills=["skill_a", "skill_b", "skill_c"],
+                description="Good at C",
+            ),
+        }
+
+
+class TestHighestConfidenceStrategy:
+    """Test HighestConfidenceStrategy."""
+
+    @pytest.mark.asyncio
+    async def test_selects_highest_confidence(self):
+        from agentic_patterns.agent_marketplace import (
+            HighestConfidenceStrategy,
+        )
+
+        strategy = HighestConfidenceStrategy()
+        rfp_id = uuid4()
+        bids = [
+            AgentBid(
+                rfp_id=rfp_id, agent_id="a", confidence=0.7, proposal=""
+            ),
+            AgentBid(
+                rfp_id=rfp_id, agent_id="b", confidence=0.9, proposal=""
+            ),
+            AgentBid(
+                rfp_id=rfp_id, agent_id="c", confidence=0.6, proposal=""
+            ),
+        ]
+        rfp = TaskRFP(requirement="Test")
+
+        winner = await strategy.select(bids, rfp, {})
+
+        assert winner is not None
+        assert winner.agent_id == "b"
+
+    @pytest.mark.asyncio
+    async def test_returns_none_for_empty_bids(self):
+        from agentic_patterns.agent_marketplace import (
+            HighestConfidenceStrategy,
+        )
+
+        strategy = HighestConfidenceStrategy()
+        rfp = TaskRFP(requirement="Test")
+
+        winner = await strategy.select([], rfp, {})
+
+        assert winner is None
+
+
+class TestBestSkillMatchStrategy:
+    """Test BestSkillMatchStrategy."""
+
+    @pytest.mark.asyncio
+    async def test_prefers_skill_match_over_confidence(self):
+        from agentic_patterns.agent_marketplace import BestSkillMatchStrategy
+
+        strategy = BestSkillMatchStrategy()
+        rfp_id = uuid4()
+        bids = [
+            AgentBid(
+                rfp_id=rfp_id, agent_id="a", confidence=0.9, proposal=""
+            ),
+            AgentBid(
+                rfp_id=rfp_id, agent_id="b", confidence=0.6, proposal=""
+            ),
+        ]
+        caps = {
+            "a": AgentCapability(
+                agent_id="a", name="A", skills=["x"], description=""
+            ),
+            "b": AgentCapability(
+                agent_id="b", name="B", skills=["skill_a"], description=""
+            ),
+        }
+        rfp = TaskRFP(requirement="Test", required_skills=["skill_a"])
+
+        winner = await strategy.select(bids, rfp, caps)
+
+        assert winner is not None
+        assert winner.agent_id == "b"  # Better skill match
+
+    @pytest.mark.asyncio
+    async def test_returns_none_for_empty_bids(self):
+        from agentic_patterns.agent_marketplace import BestSkillMatchStrategy
+
+        strategy = BestSkillMatchStrategy()
+        rfp = TaskRFP(requirement="Test")
+
+        winner = await strategy.select([], rfp, {})
+
+        assert winner is None
+
+    @pytest.mark.asyncio
+    async def test_no_required_skills_returns_first(self):
+        from agentic_patterns.agent_marketplace import BestSkillMatchStrategy
+
+        strategy = BestSkillMatchStrategy()
+        rfp_id = uuid4()
+        bids = [
+            AgentBid(
+                rfp_id=rfp_id, agent_id="a", confidence=0.7, proposal=""
+            ),
+            AgentBid(
+                rfp_id=rfp_id, agent_id="b", confidence=0.9, proposal=""
+            ),
+        ]
+        # No required_skills means all skill scores are 0
+        rfp = TaskRFP(requirement="Test", required_skills=[])
+
+        winner = await strategy.select(bids, rfp, {})
+
+        # With all zeros, max returns first element
+        assert winner is not None
+
+
+class TestWeightedScoreStrategy:
+    """Test WeightedScoreStrategy."""
+
+    @pytest.mark.asyncio
+    async def test_default_weights(self):
+        from agentic_patterns.agent_marketplace import WeightedScoreStrategy
+
+        strategy = WeightedScoreStrategy()
+        assert strategy.confidence_weight == 0.6
+        assert strategy.skill_weight == 0.4
+
+    @pytest.mark.asyncio
+    async def test_custom_weights(self):
+        from agentic_patterns.agent_marketplace import WeightedScoreStrategy
+
+        strategy = WeightedScoreStrategy(
+            confidence_weight=0.2, skill_weight=0.8
+        )
+        rfp_id = uuid4()
+        # With high skill weight, skill match matters more
+        bids = [
+            AgentBid(
+                rfp_id=rfp_id, agent_id="a", confidence=0.9, proposal=""
+            ),
+            AgentBid(
+                rfp_id=rfp_id, agent_id="b", confidence=0.5, proposal=""
+            ),
+        ]
+        caps = {
+            "a": AgentCapability(
+                agent_id="a", name="A", skills=["x"], description=""
+            ),
+            "b": AgentCapability(
+                agent_id="b", name="B", skills=["skill_a"], description=""
+            ),
+        }
+        rfp = TaskRFP(requirement="Test", required_skills=["skill_a"])
+
+        winner = await strategy.select(bids, rfp, caps)
+
+        # With 80% skill weight, b should win despite lower confidence
+        assert winner is not None
+        assert winner.agent_id == "b"
+
+    @pytest.mark.asyncio
+    async def test_returns_none_for_empty_bids(self):
+        from agentic_patterns.agent_marketplace import WeightedScoreStrategy
+
+        strategy = WeightedScoreStrategy()
+        rfp = TaskRFP(requirement="Test")
+
+        winner = await strategy.select([], rfp, {})
+
+        assert winner is None
+
+    @pytest.mark.asyncio
+    async def test_no_skills_uses_confidence_only(self):
+        from agentic_patterns.agent_marketplace import WeightedScoreStrategy
+
+        strategy = WeightedScoreStrategy()
+        rfp_id = uuid4()
+        bids = [
+            AgentBid(
+                rfp_id=rfp_id, agent_id="a", confidence=0.7, proposal=""
+            ),
+            AgentBid(
+                rfp_id=rfp_id, agent_id="b", confidence=0.9, proposal=""
+            ),
+        ]
+        # No required_skills means only confidence matters
+        rfp = TaskRFP(requirement="Test", required_skills=[])
+
+        winner = await strategy.select(bids, rfp, {})
+
+        assert winner is not None
+        assert winner.agent_id == "b"  # Higher confidence wins
+
+
+class TestAgentJudgmentStrategy:
+    """Test AgentJudgmentStrategy."""
+
+    @pytest.mark.asyncio
+    async def test_returns_none_for_empty_bids(self):
+        from agentic_patterns.agent_marketplace import AgentJudgmentStrategy
+
+        strategy = AgentJudgmentStrategy()
+        rfp = TaskRFP(requirement="Test")
+
+        winner = await strategy.select([], rfp, {})
+
+        assert winner is None
+
+    @pytest.mark.asyncio
+    async def test_uses_selector_agent(self):
+        from agentic_patterns.agent_marketplace import AgentJudgmentStrategy
+        from agentic_patterns.agent_marketplace import JudgmentResult
+
+        strategy = AgentJudgmentStrategy()
+        rfp_id = uuid4()
+        bids = [
+            AgentBid(
+                rfp_id=rfp_id, agent_id="a", confidence=0.7, proposal="Plan A"
+            ),
+            AgentBid(
+                rfp_id=rfp_id, agent_id="b", confidence=0.9, proposal="Plan B"
+            ),
+        ]
+        caps = {
+            "a": AgentCapability(
+                agent_id="a", name="A", skills=["skill_a"], description=""
+            ),
+            "b": AgentCapability(
+                agent_id="b", name="B", skills=["skill_b"], description=""
+            ),
+        }
+        rfp = TaskRFP(requirement="Test task", required_skills=["skill_a"])
+
+        # Mock the selector agent
+        mock_result = MagicMock()
+        mock_result.output = JudgmentResult(
+            selected_agent_id="a",
+            reasoning="Better skill match",
+        )
+        strategy.selector.run = AsyncMock(return_value=mock_result)
+
+        winner = await strategy.select(bids, rfp, caps)
+
+        assert winner is not None
+        assert winner.agent_id == "a"
+
+    @pytest.mark.asyncio
+    async def test_fallback_to_first_if_invalid_id(self):
+        from agentic_patterns.agent_marketplace import AgentJudgmentStrategy
+        from agentic_patterns.agent_marketplace import JudgmentResult
+
+        strategy = AgentJudgmentStrategy()
+        rfp_id = uuid4()
+        bids = [
+            AgentBid(
+                rfp_id=rfp_id, agent_id="a", confidence=0.7, proposal="Plan A"
+            ),
+        ]
+        rfp = TaskRFP(requirement="Test")
+
+        # Mock selector returning invalid agent ID
+        mock_result = MagicMock()
+        mock_result.output = JudgmentResult(
+            selected_agent_id="invalid_agent",
+            reasoning="Selected nonexistent agent",
+        )
+        strategy.selector.run = AsyncMock(return_value=mock_result)
+
+        winner = await strategy.select(bids, rfp, {})
+
+        # Should fallback to first bid
+        assert winner is not None
+        assert winner.agent_id == "a"
+
+
+class TestProtocolCompliance:
+    """Test that strategies comply with SelectionStrategy protocol."""
+
+    def test_highest_confidence_is_strategy(self):
+        from agentic_patterns.agent_marketplace import (
+            HighestConfidenceStrategy,
+        )
+        from agentic_patterns.agent_marketplace import SelectionStrategy
+
+        strategy = HighestConfidenceStrategy()
+        assert isinstance(strategy, SelectionStrategy)
+
+    def test_best_skill_match_is_strategy(self):
+        from agentic_patterns.agent_marketplace import BestSkillMatchStrategy
+        from agentic_patterns.agent_marketplace import SelectionStrategy
+
+        strategy = BestSkillMatchStrategy()
+        assert isinstance(strategy, SelectionStrategy)
+
+    def test_weighted_score_is_strategy(self):
+        from agentic_patterns.agent_marketplace import SelectionStrategy
+        from agentic_patterns.agent_marketplace import WeightedScoreStrategy
+
+        strategy = WeightedScoreStrategy()
+        assert isinstance(strategy, SelectionStrategy)
+
+    def test_agent_judgment_is_strategy(self):
+        from agentic_patterns.agent_marketplace import AgentJudgmentStrategy
+        from agentic_patterns.agent_marketplace import SelectionStrategy
+
+        strategy = AgentJudgmentStrategy()
+        assert isinstance(strategy, SelectionStrategy)
+
+
+class TestStrategyInFullFlow:
+    """Test strategies in the full marketplace flow."""
+
+    @pytest.mark.asyncio
+    async def test_run_marketplace_with_custom_strategy(self):
+        from agentic_patterns.agent_marketplace import (
+            HighestConfidenceStrategy,
+        )
+
+        rfp = TaskRFP(requirement="Test task")
+
+        cap = AgentCapability(
+            agent_id="test",
+            name="Test",
+            skills=["skill_a"],
+            description="Test agent",
+        )
+
+        bid_response = BidResponse(
+            will_bid=True,
+            confidence=0.9,
+            proposal="Will do",
+            reasoning="Skills match",
+        )
+
+        mock_agent = MagicMock()
+        mock_bid_result = MagicMock()
+        mock_bid_result.output = bid_response
+        mock_exec_result = MagicMock()
+        mock_exec_result.output = "Done!"
+
+        mock_agent.run = AsyncMock(
+            side_effect=[mock_bid_result, mock_exec_result]
+        )
+
+        with patch(
+            "agentic_patterns.agent_marketplace.agora_graph"
+        ) as mock_graph:
+            mock_graph_result = MagicMock()
+            mock_graph_result.output = TaskResult(
+                rfp_id=rfp.id,
+                agent_id="test",
+                success=True,
+                output="Done!",
+            )
+            mock_graph.run = AsyncMock(return_value=mock_graph_result)
+
+            result = await run_marketplace_task(
+                rfp,
+                [(cap, mock_agent)],
+                strategy=HighestConfidenceStrategy(),
+            )
+
+            assert result.success
