@@ -2,6 +2,13 @@
 
 Maintain conversation context across interactions using different storage strategies.
 
+## Key Insight
+
+> "Stateless agents forget everything between calls. Memory enables coherent multi-turn conversations, but the strategy (buffer, window, summary) determines cost vs. context quality."
+
+- **Stateless**: Each call starts fresh. No continuity.
+- **Memory-Enabled**: Context persists. Trade-off between full history and token limits.
+
 ## Flow Diagram
 
 ```mermaid

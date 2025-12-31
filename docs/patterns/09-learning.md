@@ -2,6 +2,13 @@
 
 Improve performance over time by storing experiences (Few-Shot) and adapting prompts.
 
+## Key Insight
+
+> "Static prompts don't improve. Learning agents store successful examples and inject them as few-shot context—performance improves with use."
+
+- **Static Prompt**: Same behavior forever. Doesn't learn from feedback.
+- **Learning Agent**: Stores good examples, improves over time. Gets better with use.
+
 ## Flow Diagram
 
 ```mermaid

@@ -1,12 +1,15 @@
-# Goal Monitoring
+# Chapter 11: Goal Monitoring
 
-**Chapter 11: The Teleological Engine**
+The Teleological Engine—making agents proactive rather than reactive.
 
-Most agents are reactive - they wait for prompts to act. The Goal Monitoring
-pattern makes agents **proactive**: they continuously check if goals are met
-and attempt remediation when gaps are detected.
+## Key Insight
 
-## Overview
+> "Most agents wait for prompts. Goal-monitoring agents continuously evaluate the world and act when reality diverges from intent."
+
+- **Reactive Agents**: Wait for user input, respond to prompts.
+- **Proactive Agents**: Monitor goals continuously, remediate gaps autonomously.
+
+## Flow Diagram
 
 ```mermaid
 stateDiagram-v2

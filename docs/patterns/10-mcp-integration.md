@@ -1,10 +1,15 @@
-# MCP Integration (Tool Extensibility)
+# Chapter 10: MCP Integration
 
-Source: [`src/agentic_patterns/mcp_integration.py`](https://github.com/runyaga/agentic-patterns-book/blob/main/src/agentic_patterns/mcp_integration.py)
+Extend agents with external tools via the Model Context Protocol (MCP).
 
-The **MCP Integration** pattern demonstrates how to use the Model Context Protocol (MCP) to extend agents with external tools. Instead of hardcoding tools, this pattern allows agents to connect to local or remote servers (via stdio or HTTP/SSE) to dynamically discover capabilities.
+## Key Insight
 
-## Key Concepts
+> "Native tools are functions; MCP tools are services. When tools outlive the agent process, cross language boundaries, or require sandboxing—MCP provides the protocol."
+
+- **Native `@agent.tool`**: Best for Python-only tools in the same process. Zero overhead, easy debugging.
+- **MCP Integration**: Best for shared/remote tools, multi-language reuse, or sandboxed execution (Docker/WASM).
+
+## Flow Diagram
 
 ```mermaid
 sequenceDiagram

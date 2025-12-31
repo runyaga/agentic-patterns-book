@@ -2,6 +2,13 @@
 
 Execute independent sub-tasks concurrently (`asyncio.gather`) to reduce latency.
 
+## Key Insight
+
+> "Sequential execution wastes time when tasks are independent. Fan-out, process in parallel, aggregate results—latency equals your slowest task, not the sum."
+
+- **Sequential**: Task A → Task B → Task C. Total time = A + B + C.
+- **Parallel**: Tasks A, B, C run concurrently. Total time = max(A, B, C).
+
 ## Flow Diagram
 
 ```mermaid

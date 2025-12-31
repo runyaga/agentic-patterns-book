@@ -1,12 +1,15 @@
-# Resource-Aware Optimization
+# Chapter 16: Resource-Aware Optimization
 
-**Chapter 16**
+Route tasks to the right model based on complexity and budget constraints.
 
-[Source](https://github.com/yourusername/agentic-patterns/blob/main/src/agentic_patterns/resource_aware.py)
+## Key Insight
 
-LLM-based applications can be expensive and slow. **Resource-Aware Optimization** addresses this by dynamically routing requests to the most appropriate model based on task complexity and budget constraints. Simple queries go to fast, cheap models; complex reasoning goes to powerful, expensive ones.
+> "Not every question needs GPT-4. A complexity classifier routing 80% of queries to cheap models can cut costs by 10x with minimal quality impact."
 
-## Key Concepts
+- **One Model Fits All**: Overpays for simple queries, under-serves complex ones.
+- **Resource-Aware Routing**: Match model capability to task complexity dynamically.
+
+## Flow Diagram
 
 ```mermaid
 flowchart LR

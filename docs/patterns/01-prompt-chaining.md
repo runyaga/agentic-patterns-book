@@ -2,6 +2,13 @@
 
 Chain multiple LLM calls where each step's output becomes the next input.
 
+## Key Insight
+
+> "Complex tasks fail in a single prompt. Breaking them into a chain of specialized steps makes each step verifiable and the whole pipeline debuggable."
+
+- **Single-Shot**: One prompt tries to do everything. Fails on complex tasks.
+- **Chained Steps**: Extract → Analyze → Generate. Each step is testable.
+
 ## Flow Diagram
 
 ```mermaid

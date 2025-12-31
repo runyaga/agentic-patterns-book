@@ -2,6 +2,13 @@
 
 Coordinate specialized agents (Supervisor, Researcher, Writer) to achieve complex goals.
 
+## Key Insight
+
+> "One agent can't master every skill. Multi-agent systems divide expertise—a Supervisor orchestrates while specialists (Researcher, Writer, Reviewer) excel at their domains."
+
+- **Single Agent**: One prompt, one context, limited expertise.
+- **Multi-Agent**: Specialized agents collaborate, each optimized for their role.
+
 ## Flow Diagram
 
 ```mermaid

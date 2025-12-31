@@ -1,12 +1,15 @@
-# Prioritization
+# Chapter 20: Prioritization
 
-**Chapter 20**
+Systematic task ranking based on urgency, importance, and dependencies.
 
-[Source](https://github.com/yourusername/agentic-patterns/blob/main/src/agentic_patterns/prioritization.py)
+## Key Insight
 
-Agents handling multiple concurrent tasks need a systematic way to decide what to work on next. **Prioritization** enables agents to assess and rank tasks based on urgency, importance, dependencies, and resource constraints.
+> "FIFO is fair but dumb. Intelligent prioritization ensures high-impact work gets done first while preventing starvation of lower-priority tasks."
 
-## Key Concepts
+- **FIFO Queues**: Simple but ignores urgency, importance, and dependencies.
+- **Priority Scheduling**: Weighted scoring with dynamic re-prioritization.
+
+## Flow Diagram
 
 ```mermaid
 flowchart LR

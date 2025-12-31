@@ -2,6 +2,13 @@
 
 Multi-level exploration with pruning, extending Thought Candidates (17a).
 
+## Key Insight
+
+> "Greedy reasoning picks the most likely next step—often a dead end. Tree of Thoughts explores multiple paths, prunes bad branches, and finds solutions that greedy misses."
+
+- **Greedy/Chain-of-Thought**: One path forward. Dead ends are fatal.
+- **Tree of Thoughts**: Branch, evaluate, prune. Backtrack from dead ends.
+
 ## Flow Diagram
 
 ```mermaid

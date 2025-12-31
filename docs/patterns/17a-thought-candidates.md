@@ -2,6 +2,13 @@
 
 Single-level parallel generation and evaluation of candidate solutions.
 
+## Key Insight
+
+> "First-try isn't best-try. Generate N candidates in parallel, score each, select the best—trading compute for quality."
+
+- **Single Generation**: One shot, one answer. Quality varies.
+- **Best-of-N**: Generate multiple, evaluate each, pick winner. Higher quality.
+
 ## Flow Diagram
 
 ```mermaid
